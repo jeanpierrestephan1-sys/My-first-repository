@@ -1,0 +1,9 @@
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+[template.environment]
+  ADMIN_CODE = "Commissioner code (your private password for entering scores)"
