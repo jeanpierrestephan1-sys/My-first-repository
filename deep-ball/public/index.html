@@ -101,6 +101,11 @@ h3.sec{font:400 20px/1 var(--display);margin:26px 0 10px}
 .hm b{display:block;font-size:17px}
 .called{font:400 26px/1.1 var(--display);overflow-wrap:anywhere}
 
+/* category pick */
+.cat{display:block;width:100%;text-align:left;margin-top:14px}
+.cat.off{background:rgba(8,58,36,.75);color:var(--chalk);border-color:rgba(251,248,240,.4);box-shadow:none;font-size:19px;padding:14px 16px}
+.hint{font-weight:600;margin:12px 0 0}
+
 /* review */
 .ans{position:relative;display:grid;grid-template-columns:1fr auto;gap:8px 12px;align-items:center}
 .ans .txt{font:400 23px/1.1 var(--display);overflow-wrap:anywhere}
@@ -119,7 +124,8 @@ h3.sec{font:400 20px/1 var(--display);margin:26px 0 10px}
 .big{text-align:center;margin:6px 0 20px}
 .big .n{font:400 clamp(72px,26vw,120px)/.9 var(--display);text-shadow:0 6px 0 var(--ink)}
 .big .n.neg{color:#FF8A9B}
-.big .n.td{color:var(--flag);font-size:clamp(38px,11.5vw,60px);line-height:1.1}
+.big .n{font-size:clamp(46px,15vw,80px);line-height:1}
+.big .n.win{color:var(--flag)}
 .big .l{font:700 22px var(--num);letter-spacing:.03em;margin-top:8px}
 .lanes{display:grid;gap:12px}
 .lane .info{display:flex;align-items:center;gap:8px;margin-bottom:5px;font-weight:600}
@@ -128,8 +134,9 @@ h3.sec{font:400 20px/1 var(--display);margin:26px 0 10px}
 .lane .info .gain.neg{background:var(--red)}
 .lane .info .gain.zero{opacity:.7}
 .lane .info .pts{font:700 24px/1 var(--num);min-width:26px;text-align:right}
+.lane .info .pts.neg{color:#FF8A9B}
 .track{position:relative;height:34px;border-radius:8px;border:2px solid var(--chalk);
-  background:linear-gradient(90deg,transparent 92%,var(--flag) 92%),repeating-linear-gradient(90deg,rgba(251,248,240,.5) 0 1.5px,transparent 1.5px 9.2%),var(--turf-dk)}
+  background:repeating-linear-gradient(90deg,transparent 0 calc(10% - 1.5px),rgba(251,248,240,.45) calc(10% - 1.5px) 10%),var(--turf-dk)}
 .track svg{position:absolute;inset:0;width:100%;height:100%;border-radius:6px}
 .track path{fill:none;stroke:var(--chalk);stroke-width:2.5;vector-effect:non-scaling-stroke;stroke-linecap:round;stroke-dasharray:900;stroke-dashoffset:900}
 .track path.neg{stroke:#FF8A9B}
@@ -149,7 +156,7 @@ h3.sec{font:400 20px/1 var(--display);margin:26px 0 10px}
 .rank .pos{font:700 22px var(--num)}
 .rank .nm{font-weight:700;min-width:0;overflow-wrap:anywhere}
 .rank .nm small{display:block;font-weight:500;font-size:13.5px;opacity:.75}
-.rank .sc{font:400 30px/1 var(--display)}
+.rank .sc{font:400 24px/1 var(--display)}
 .rank .jersey{border-color:var(--ink)}
 
 /* dock, toast, reactions */
@@ -260,25 +267,34 @@ const buzz = (ms) => { try { navigator.vibrate && navigator.vibrate(ms); } catch
 
 // ---------- shared pieces ----------
 const jersey = (p) => `<span class="jersey" style="--c:${p.color}">${p.num}</span>`;
-const X = (yards) => Math.max(0, Math.min(100, yards)) * 0.92;   // track position, end zone is the last 8%
-const standing = (ps) => ps.slice().sort((a, b) => b.pts - a.pts || b.yards - a.yards || b.total - a.total);
+const money = (n) => (n < 0 ? '\u2212' : '') + '$' + Math.abs(n).toLocaleString('en-US');
+const standing = (ps) => ps.slice().sort((a, b) => b.score - a.score || b.deep - a.deep);
+// Track position: the leader sets the scale, so the field always shows who is chasing whom.
+function scale() {
+  let m = 1000;
+  for (const p of S.players) m = Math.max(m, p.score);
+  if (S.results) for (const r of Object.values(S.results)) m = Math.max(m, r.from, r.to);
+  return m;
+}
+const X = (score, m) => 3 + Math.max(0, Math.min(1, score / m)) * 94;
 function lanes(animate) {
+  const m = scale();
   return `<div class="lanes">${standing(S.players).map((p) => {
     const r = animate && S.results ? S.results[p.pub] : null;
-    const from = r ? r.from : p.yards;
+    const from = r ? r.from : p.score;
     let gain = '';
     if (r) {
       const cls = r.gain < 0 ? 'neg' : r.gain === 0 ? 'zero' : '';
-      gain = `<span class="gain ${cls}">${r.gain > 0 ? '+' : ''}${r.gain} ${esc(r.label)}</span>`;
+      gain = `<span class="gain ${cls}">${r.gain > 0 ? '+' : ''}${money(r.gain)} ${esc(r.label)}</span>`;
     }
     let arc = '';
-    if (r && r.gain !== 0) {
-      const a = X(r.from), b = r.td ? 96 : X(r.to), h = Math.min(30, 6 + Math.abs(b - a) * 0.45);
+    if (r && X(r.from, m) !== X(r.to, m)) {
+      const a = X(r.from, m), b = X(r.to, m), h = Math.min(30, 6 + Math.abs(b - a) * 0.45);
       arc = `<svg viewBox="0 0 100 34" preserveAspectRatio="none" aria-hidden="true"><path class="${r.gain < 0 ? 'neg' : ''}" d="M${a} 26 Q${(a + b) / 2} ${26 - h * 2} ${b} 26"/></svg>`;
     }
-    return `<div class="lane ${p.pub === S.you ? 'you' : ''}" data-pub="${p.pub}">
-      <div class="info">${jersey(p)}<span class="nm">${esc(p.name)}</span>${gain}<span class="pts" title="points">${p.pts}</span></div>
-      <div class="track">${arc}<div class="dot" style="--c:${p.color};left:${X(from)}%">${p.num}</div></div>
+    return `<div class="lane ${p.pub === S.you ? 'you' : ''}" data-pub="${p.pub}" data-to="${X(p.score, m)}">
+      <div class="info">${jersey(p)}<span class="nm">${esc(p.name)}</span>${gain}<span class="pts ${p.score < 0 ? 'neg' : ''}">${money(p.score)}</span></div>
+      <div class="track">${arc}<div class="dot" style="--c:${p.color};left:${X(from, m)}%">${p.num}</div></div>
     </div>`;
   }).join('')}</div>`;
 }
@@ -294,7 +310,7 @@ function tickClock() {
   if (!c || !S) return;
   const left = Math.max(0, deadline - Date.now());
   c.textContent = Math.ceil(left / 1000);
-  c.classList.toggle('hot', S.phase === 'answer' && left < 8000);
+  c.classList.toggle('hot', (S.phase === 'answer' || S.phase === 'pick') && left < 8000);
   if (tb) tb.style.transform = `scaleX(${Math.min(1, left / span)})`;
 }
 setInterval(tickClock, 200);
@@ -316,7 +332,7 @@ function home() {
     </svg>
     <h1 class="logo"><span>Deep</span><span>Ball</span></h1>
   </div>
-  <p class="pitch">Everyone answers the same question on their own phone. Say what the whole family says and you get stuffed. Say what nobody else thought of and you go long.</p>
+  <p class="pitch">Everyone answers the same question on their own phone. History, movies, food, sports and more. Say what the whole family says and you get stuffed. Say what nobody else thought of and you go long.</p>
   <form class="stack" id="f">
     <div><label class="lab" for="nm">Your name</label>
       <input class="field" id="nm" maxlength="14" autocomplete="given-name" placeholder="Coach Dad" value="${esc(me.name || '')}"></div>
@@ -358,14 +374,15 @@ function lobby() {
   <h3 class="sec">Game length</h3>
   <div class="seg">${[[6, 'Quick<br>6 plays'], [8, 'Classic<br>8 plays'], [12, 'Marathon<br>12 plays']].map(([n, l]) => `<button data-plays="${n}" aria-pressed="${S.cfg.plays === n}">${l}</button>`).join('')}</div>
   <h3 class="sec">Questions for</h3>
-  <div class="seg">${[['family', 'The whole family'], ['fans', 'Football fans']].map(([n, l]) => `<button data-crowd="${n}" aria-pressed="${S.cfg.crowd === n}">${l}</button>`).join('')}</div>` : ''}
+  <div class="seg">${[['family', 'The whole family'], ['buffs', 'Trivia buffs']].map(([n, l]) => `<button data-crowd="${n}" aria-pressed="${S.cfg.crowd === n}">${l}</button>`).join('')}</div>` : ''}
   <h3 class="sec">How it works</h3>
   <div class="card rules">
-    <div><i>🏈</i><span><b>Go deep.</b> An answer nobody else gives is worth 30 yards. Share it with one person and it is 15. Share it with the crowd and you get 4.</span></div>
+    <div><i>🏈</i><span><b>Go deep.</b> Every question has lots of right answers and a dollar value. Be the only one with your answer and you bank all of it. Share it with one person and you get half. Say what everyone says and you get a tenth.</span></div>
+    <div><i>📋</i><span><b>Trailing player calls the play.</b> Whoever is behind picks the next category, from history to music to food.</span></div>
     <div><i>🤝</i><span><b>Huddle plays flip it.</b> Now you want to match as many people as you can.</span></div>
-    <div><i>🚩</i><span><b>Throw a flag</b> on any answer that is wrong. If most of the family agrees, it is a 10 yard sack.</span></div>
-    <div><i>🙏</i><span><b>One Hail Mary each.</b> 60 yards if nobody matches you. Lose 15 if anyone does.</span></div>
-    <div><i>🏆</i><span><b>100 yards is a touchdown.</b> Most points after the last play wins.</span></div>
+    <div><i>🚩</i><span><b>Throw a flag</b> on any answer that is wrong. If most of the family agrees, it costs half the value.</span></div>
+    <div><i>🙏</i><span><b>One Hail Mary each.</b> Double the value if nobody matches you. Lose the value if anyone does.</span></div>
+    <div><i>🏆</i><span><b>Values climb</b> from $200 to $1,000 and the last play is double. Most money wins.</span></div>
   </div>
   <p style="margin-top:16px"><button class="linkbtn" id="snd">${me.quiet ? 'Turn sound on' : 'Turn sound off'}</button> <button class="linkbtn" id="lv" style="margin-left:14px">Leave game</button></p>
   ${dock(S.host ? `<button class="btn" id="go">${S.players.length < 2 ? 'Waiting for players' : 'Kick off'}</button>`
@@ -382,6 +399,18 @@ function lobby() {
   if (go) go.onclick = () => { if (S.players.length < 2) return toast('You need at least two players. Tap Invite the family.'); act('start', {}, go); };
 }
 
+function pick() {
+  const who = S.players.find((p) => p.pub === S.pick.pub);
+  const head = S.pick.mine ? 'Your call. Pick a category.' : `${esc(who ? who.name : 'Someone')} is calling the play`;
+  app.innerHTML = `${bar()}<span class="tag ${S.pick.last ? 'drill' : ''}">${S.pick.last ? 'Last play, double money: ' : 'Next play is worth '}${money(S.pick.value)}</span>
+    <h2 class="prompt" style="margin-bottom:6px">${head}</h2>
+    ${S.pick.options.map((c) => S.pick.mine ? `<button class="btn alt cat" data-cat="${esc(c)}">${esc(c)}</button>` : `<div class="btn cat off">${esc(c)}</div>`).join('')}
+    ${S.pick.mine ? '' : '<p class="hint">The trailing player picks. Stay ready.</p>'}
+    <h3 class="sec">The field</h3><div class="mini">${lanes(false)}</div>`;
+  app.querySelectorAll('[data-cat]').forEach((b) => b.onclick = () => { buzz(30); act('pick', { cat: b.dataset.cat }, b); });
+  if (S.pick.mine) buzz(60);
+}
+
 function waiting() {
   const out = S.players.filter((p) => !p.in);
   return `<div class="roster">${S.players.map((p) => `<span class="chip ${p.in ? 'in' : 'wait'}">${jersey(p)}${esc(p.name)}${p.in ? ' ✓' : ''}</span>`).join('')}</div>
@@ -392,15 +421,17 @@ function answerBox() {
   const hm = S.play.type === 'deep' && S.hm > 0;
   return `<form class="stack" id="af">
     <input class="field" id="ai" maxlength="40" autocomplete="off" autocapitalize="words" enterkeyhint="send" placeholder="${S.play.type === 'huddle' ? 'What will everyone say?' : 'Think past the obvious'}" aria-label="Your answer">
-    ${hm ? `<label class="hm"><input type="checkbox" id="hm"><span><b>Call a Hail Mary</b>60 yards if nobody matches you. Lose 15 if anyone does. One per game.</span></label>` : ''}
+    ${hm ? `<label class="hm"><input type="checkbox" id="hm"><span><b>Call a Hail Mary</b>${money(S.play.value * 2)} if nobody matches you. Lose ${money(S.play.value)} if anyone does.</span></label>` : ''}
     <button class="btn">Hike</button></form>`;
 }
 function answer(fresh) {
   if (fresh) {
-    const t = S.play.type === 'huddle' ? ['huddle', 'Huddle play. Match as many people as you can.']
-      : S.play.last ? ['drill', 'Two minute drill. Last play, double yards.'] : ['', 'Go deep. Be the only one who says it.'];
-    app.innerHTML = `${bar()}<span class="tag ${t[0]}">${t[1]}</span>
+    const cls = S.play.type === 'huddle' ? 'huddle' : S.play.last ? 'drill' : '';
+    const hint = S.play.type === 'huddle' ? 'Huddle play. Match as many people as you can.'
+      : S.play.last ? 'Last play, double money. Be the only one who says it.' : 'Be the only one who says it.';
+    app.innerHTML = `${bar()}<span class="tag ${cls}">${esc(S.play.cat)} for ${money(S.play.value)}</span>
       <h2 class="prompt">${esc(S.play.q)}</h2>
+      <p class="hint" style="margin:-8px 0 14px">${hint}</p>
       <div id="box"></div><h3 class="sec">In the huddle</h3><div id="wait"></div>
       <h3 class="sec">The field</h3><div class="mini">${lanes(false)}</div>`;
     whistle(); buzz(60); window.scrollTo(0, 0);
@@ -422,15 +453,6 @@ function answer(fresh) {
   document.getElementById('wait').innerHTML = waiting();
 }
 
-function provisional(g) {
-  const n = g.pubs.length;
-  let y;
-  if (S.play.type === 'huddle') y = n > 1 ? Math.min(40, 12 * (n - 1)) : 0;
-  else if (g.bad || g.flags >= g.need) y = -10;
-  else if (n === 1 && g.hm.length) y = 60;
-  else y = n === 1 ? 30 : n === 2 ? 15 : n === 3 ? 8 : 4;
-  return S.play.last ? y * 2 : y;
-}
 function review() {
   const deep = S.play.type === 'deep';
   const byPub = Object.fromEntries(S.players.map((p) => [p.pub, p]));
@@ -440,9 +462,9 @@ function review() {
     <p class="muted" style="margin-bottom:4px">${esc(S.play.q)}</p>
     <h2 class="prompt" style="margin-top:0">${deep ? 'Any flags on the play?' : 'How the huddle voted'}</h2>
     <div class="stack">${order.map(({ g, gi }) => {
-      const y = provisional(g), over = deep && g.flags >= g.need;
+      const y = g.pay, over = deep && g.flags >= g.need;
       return `<div class="card ans ${g.mine ? 'me' : ''} ${over ? 'bad' : ''}">
-        <span class="txt">${esc(g.txt)}</span><span class="yd ${y < 0 ? 'neg' : ''}">${y > 0 ? '+' : ''}${y} yd</span>
+        <span class="txt">${esc(g.txt)}</span><span class="yd ${y < 0 ? 'neg' : ''}">${y > 0 ? '+' : ''}${money(y)}</span>
         <div class="who">${g.pubs.map((id) => `<span>${jersey(byPub[id])}${esc(byPub[id].name)}${g.hm.includes(id) ? ' 🙏' : ''}</span>`).join('')}</div>
         ${over ? '<span class="stamp">Overturned</span>' : ''}
         ${deep && !g.mine ? `<button class="flagbtn" data-gi="${gi}" aria-pressed="${g.flagged}">🚩 ${g.flagged ? 'Flag thrown' : 'Throw a flag'} (${g.flags} of ${g.need})</button>` : ''}
@@ -457,36 +479,33 @@ function review() {
 function result() {
   const mine = S.results[S.you] || { gain: 0, label: '' };
   const last = S.idx === S.total - 1;
+  const win = mine.label === 'Deep ball' || mine.label === 'Hail Mary';
   app.innerHTML = `${bar()}
-    <div class="big">${mine.td ? `<div class="n td">Touchdown!</div>` : `<div class="n ${mine.gain < 0 ? 'neg' : ''}">${mine.gain > 0 ? '+' : ''}${mine.gain}</div>`}
-      <div class="l">${mine.td ? `${mine.gain > 0 ? '+' : ''}${mine.gain} yards, 7 points` : `yards. ${esc(mine.label)}`}</div></div>
+    <div class="big"><div class="n ${mine.gain < 0 ? 'neg' : win ? 'win' : ''}">${mine.gain > 0 ? '+' : ''}${money(mine.gain)}</div>
+      <div class="l">${esc(mine.label)}</div></div>
     ${lanes(true)}
     ${dock(S.host ? `<button class="btn" id="skip">${last ? 'See the final score' : 'Next play'}</button>` : '', true)}`;
   window.scrollTo(0, 0);
   setTimeout(() => {
     app.querySelectorAll('.lane').forEach((el) => {
-      const r = S.results[el.dataset.pub]; if (!r) return;
       el.querySelector('.track').classList.add('go');
-      const dot = el.querySelector('.dot');
-      dot.style.left = (r.td ? 96 : X(r.to)) + '%';
-      if (r.td) setTimeout(() => { dot.style.left = X(r.to) + '%'; }, 2300);
+      el.querySelector('.dot').style.left = el.dataset.to + '%';
     });
   }, 450);
-  if (mine.td) { setTimeout(() => { fanfare(); confetti(34); buzz([80, 60, 160]); }, 1300); }
+  if (win) { setTimeout(() => { fanfare(); confetti(mine.label === 'Hail Mary' ? 40 : 16); buzz([80, 60, 160]); }, 1100); }
   else if (mine.gain < 0) buzz(200);
   hostSkip('result');
 }
 
 function final() {
-  const st = standing(S.players).sort((a, b) => b.pts - a.pts || b.total - a.total);
-  const w = st[0], tie = st[1] && st[1].pts === w.pts && st[1].total === w.total;
+  const st = standing(S.players);
+  const w = st[0], tie = st[1] && st[1].score === w.score;
   app.innerHTML = `
     <div class="champ"><div class="t">🏆</div><p class="lab" style="text-align:center;margin:6px 0">${tie ? 'It ends in a tie' : 'Your champion'}</p>
       <div class="w">${esc(tie ? `${w.name} & ${st[1].name}` : w.name)}</div></div>
     <div class="card">${st.map((p, i) => `<div class="rank"><span class="pos">${i + 1}</span>${jersey(p)}
-      <span class="nm">${esc(p.name)}<small>${p.total} yards${p.tds ? `, ${p.tds} touchdown${p.tds > 1 ? 's' : ''}` : ''}${p.fg ? ', field goal at the gun' : ''}</small></span>
-      <span class="sc">${p.pts}</span></div>`).join('')}</div>
-    <p class="muted" style="margin-top:14px">Anyone inside the 35 when time ran out kicked a field goal for 3.</p>
+      <span class="nm">${esc(p.name)}<small>${p.deep} deep ball${p.deep === 1 ? '' : 's'}</small></span>
+      <span class="sc">${money(p.score)}</span></div>`).join('')}</div>
     ${dock(S.host ? `<button class="btn" id="again">Play again</button>` : `<p style="text-align:center;font-weight:600;margin:0">The host can start a rematch</p>`, true)}`;
   window.scrollTo(0, 0);
   if (w.pub === S.you || (tie && st[1].pub === S.you)) setTimeout(() => { fanfare(); confetti(50); }, 400);
@@ -506,6 +525,7 @@ function render() {
   const fresh = k !== key; key = k;
   if (fresh) span = Math.max(1, S.left);
   if (S.phase === 'lobby') lobby();
+  else if (S.phase === 'pick') pick();
   else if (S.phase === 'answer') answer(fresh);
   else if (S.phase === 'review') review();
   else if (S.phase === 'result') { if (fresh) result(); }

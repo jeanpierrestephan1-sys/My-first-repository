@@ -1,8 +1,9 @@
 # Deep Ball
 
-A live family football game. Everyone answers the same question on their own phone.
-The answer nobody else gives goes long; the obvious one gets stuffed at the line.
-100 yards is a touchdown. Most points after the last play wins.
+A live family quiz game with a football heart. Everyone answers the same question on their own phone.
+Twelve categories, from history to music to food. Each play has a dollar value that climbs from $200 to $1,000,
+and the last play is double. The answer nobody else gives banks the full value; the obvious one gets stuffed.
+The trailing player picks the next category. Most money wins.
 
 - `public/index.html` is the whole front end (fonts are bundled in `public/fonts`, SIL Open Font License)
 - `api/game.js` is the one serverless endpoint
@@ -24,4 +25,4 @@ Rooms delete themselves six hours after the last action.
 
 ## Add your own questions
 
-Edit `lib/prompts.js`. `DEEP` questions reward rare answers, `HUDDLE` questions reward matching the family.
+Edit `lib/prompts.js`. Add a line to any category in `BANK`, or add a new category. `HUDDLE` questions reward matching the family.
