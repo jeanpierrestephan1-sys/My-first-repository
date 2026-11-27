@@ -133,7 +133,7 @@ module.exports = async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   if (!store.configured()) {
-    return res.status(503).json({ error: 'Almost there: add Upstash Redis to this Vercel project (Storage tab), then redeploy.' });
+    return res.status(503).json({ error: 'Almost there: add Upstash Redis to this Vercel project (Storage tab), then redeploy.', seen: store.seen() });
   }
   try {
     const b = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
