@@ -26,6 +26,28 @@ function addPlayer(room, pid, name) {
   room.order.push(pid);
 }
 
+// Someone walks off the field. Their past answers stay on the board; nobody waits on them any more.
+function removePlayer(room, pid, now) {
+  if (!room.order.includes(pid)) return false;
+  room.order = room.order.filter((p) => p !== pid);
+  delete room.answers[pid];
+  if (room.host === pid && room.order.length) room.host = room.order[0];
+  if (room.phase === 'lobby') { delete room.players[pid]; return true; }
+  if (!room.order.length) { toLobby(room); return true; }
+  if (room.phase === 'pick' && room.pick && room.pick.pid === pid) tick(room, now, true);
+  else tick(room, now, false);
+  return true;
+}
+
+function toLobby(room) {
+  room.phase = 'lobby'; room.plays = []; room.pool = {}; room.pick = null; room.idx = 0;
+  room.answers = {}; room.groups = []; room.flags = {}; room.results = null; room.deadline = 0;
+  for (const id of Object.keys(room.players)) {
+    if (!room.order.includes(id)) delete room.players[id];
+    else Object.assign(room.players[id], { score: 0, deep: 0 });
+  }
+}
+
 function cleanName(s) {
   return String(s || '').replace(/\s+/g, ' ').trim().slice(0, 14);
 }
@@ -221,4 +243,4 @@ function view(room, pid, now) {
   return out;
 }
 
-module.exports = { newRoom, addPlayer, cleanName, start, tick, choose, view, fail, groupAnswers };
+module.exports = { removePlayer, toLobby, newRoom, addPlayer, cleanName, start, tick, choose, view, fail, groupAnswers };
