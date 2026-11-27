@@ -1,7 +1,7 @@
 // Game rules. Pure functions over a room object; the API layer handles storage.
-const { buildPlays } = require('./prompts');
+const { buildGame, shuffle } = require('./prompts');
 
-const T = { answer: 40000, review: 16000, reviewHuddle: 9000, result: 13000 };
+const T = { pick: 15000, answer: 40000, review: 16000, reviewHuddle: 9000, result: 13000 };
 const COLORS = ['#E4002B', '#1D4ED8', '#F59E0B', '#7C3AED', '#0891B2', '#DB2777', '#111827', '#EA580C', '#0D9488', '#4D7C0F', '#9F1239', '#475569'];
 const MAX_PLAYERS = 12;
 
@@ -9,7 +9,7 @@ function newRoom(code, hostPid) {
   return {
     v: 0, code, host: hostPid, phase: 'lobby',
     cfg: { plays: 8, crowd: 'family' },
-    players: {}, order: [], plays: [], idx: 0, deadline: 0,
+    players: {}, order: [], plays: [], pool: {}, pick: null, idx: 0, deadline: 0,
     answers: {}, groups: [], flags: {}, results: null, rx: [], rxn: 0, seq: 0,
   };
 }
@@ -21,7 +21,7 @@ function addPlayer(room, pid, name) {
   room.seq += 1;
   room.players[pid] = {
     pub: 'p' + room.seq, name, num, color: COLORS[(room.seq - 1) % COLORS.length],
-    yards: 0, pts: 0, tds: 0, total: 0, hm: 1, fg: false,
+    score: 0, deep: 0, hm: 1,
   };
   room.order.push(pid);
 }
@@ -33,18 +33,35 @@ function cleanName(s) {
 function fail(msg) { const e = new Error(msg); e.user = true; return e; }
 
 function start(room) {
-  room.plays = buildPlays(room.cfg.plays, room.cfg.crowd);
+  const g = buildGame(room.cfg.plays, room.cfg.crowd);
+  room.plays = g.plays; room.pool = g.pool;
   room.idx = 0;
   for (const pid of room.order) {
-    Object.assign(room.players[pid], { yards: 0, pts: 0, tds: 0, total: 0, fg: false, hm: room.cfg.plays >= 12 ? 2 : 1 });
+    Object.assign(room.players[pid], { score: 0, deep: 0, hm: room.cfg.plays >= 12 ? 2 : 1 });
   }
   beginPlay(room, Date.now());
 }
 
+// A new play. Huddle plays come with their question; otherwise whoever is trailing picks a category.
 function beginPlay(room, now) {
-  room.phase = 'answer';
-  room.answers = {}; room.groups = []; room.flags = {}; room.results = null;
-  room.deadline = now + T.answer;
+  room.answers = {}; room.groups = []; room.flags = {}; room.results = null; room.pick = null;
+  const play = room.plays[room.idx];
+  if (play.q) { room.phase = 'answer'; room.deadline = now + T.answer; return; }
+  const low = Math.min(...room.order.map((p) => room.players[p].score));
+  const trailing = room.order.filter((p) => room.players[p].score === low);
+  const options = shuffle(Object.keys(room.pool).filter((c) => room.pool[c].length)).slice(0, 3);
+  room.pick = { pid: trailing[room.idx % trailing.length], options };
+  room.phase = 'pick';
+  room.deadline = now + T.pick;
+}
+
+function choose(room, cat, now) {
+  const play = room.plays[room.idx];
+  if (!room.pick || !room.pick.options.includes(cat)) return false;
+  play.cat = cat; play.q = room.pool[cat].pop();
+  room.pick = null;
+  room.phase = 'answer'; room.deadline = now + T.answer;
+  return true;
 }
 
 // ---------- answer matching ----------
@@ -95,38 +112,38 @@ function overturned(room, gi) {
   return eligible > 0 && n * 2 > eligible;
 }
 
-function yardsFor(play, size, hm, bad) {
+// What one answer is worth. size = how many people gave it, P = players in the game.
+function pay(play, size, hm, bad, P) {
+  const v = play.value;
   if (play.type === 'huddle') {
-    return size > 1 ? [Math.min(40, 12 * (size - 1)), size > 2 ? 'Huddle up' : 'Two on the same page'] : [0, 'Nobody open'];
+    if (size < 2) return [0, 'Nobody open'];
+    return [Math.round((v * (size - 1)) / Math.max(1, P - 1) / 10) * 10, size > 2 ? 'Huddle up' : 'Two on the same page'];
   }
-  if (bad) return hm ? [-15, 'Hail Mary overturned'] : [-10, 'Sacked'];
-  if (hm) return size === 1 ? [60, 'Hail Mary'] : [-15, 'Intercepted'];
-  if (size === 1) return [30, 'Deep ball'];
-  if (size === 2) return [15, 'First down'];
-  if (size === 3) return [8, 'Short gain'];
-  return [4, 'Stuffed at the line'];
+  if (bad) return hm ? [-v, 'Hail Mary overturned'] : [-v / 2, 'Sacked'];
+  if (hm) return size === 1 ? [v * 2, 'Hail Mary'] : [-v, 'Intercepted'];
+  if (size === 1) return [v, 'Deep ball'];
+  if (size === 2) return [v / 2, 'First down'];
+  if (size === 3) return [v / 4, 'Short gain'];
+  return [v / 10, 'Stuffed at the line'];
 }
 
 function score(room, now) {
   const play = room.plays[room.idx];
-  const last = room.idx === room.plays.length - 1;
   const res = {};
   room.groups.forEach((g, gi) => {
     g.bad = play.type === 'deep' && overturned(room, gi);
     for (const pid of g.pids) {
-      const [y, label] = yardsFor(play, g.pids.length, g.hm.includes(pid), g.bad);
-      res[pid] = { gain: last ? y * 2 : y, label, txt: g.txt };
+      const [gain, label] = pay(play, g.pids.length, g.hm.includes(pid), g.bad, room.order.length);
+      res[pid] = { gain, label, txt: g.txt };
     }
   });
   for (const pid of room.order) {
     const p = room.players[pid];
     const r = res[pid] || (res[pid] = { gain: 0, label: 'Delay of game', txt: '' });
-    r.from = p.yards;
-    p.total += r.gain;
-    let y = Math.max(0, p.yards + r.gain);
-    r.td = 0;
-    while (y >= 100) { y -= 100; p.pts += 7; p.tds += 1; r.td += 1; }
-    p.yards = r.to = y;
+    r.from = p.score;
+    p.score += r.gain;
+    r.to = p.score;
+    if (r.label === 'Deep ball' || r.label === 'Hail Mary') p.deep += 1;
   }
   room.results = res;
   room.phase = 'result';
@@ -134,17 +151,17 @@ function score(room, now) {
 }
 
 function finish(room) {
-  for (const pid of room.order) {
-    const p = room.players[pid];
-    p.fg = p.yards >= 65; // close enough to kick it
-    if (p.fg) p.pts += 3;
-  }
   room.phase = 'final';
   room.deadline = 0;
 }
 
 // Move the game forward when a clock runs out or everyone is in. Returns true if anything changed.
 function tick(room, now, force) {
+  if (room.phase === 'pick') {
+    if (!(force || now >= room.deadline)) return false;
+    const o = room.pick.options;
+    return choose(room, o[Math.floor(Math.random() * o.length)], now);
+  }
   if (room.phase === 'answer') {
     const all = room.order.length > 0 && room.order.every((pid) => room.answers[pid]);
     if (!(all || force || now >= room.deadline)) return false;
@@ -172,19 +189,20 @@ function view(room, pid, now) {
   const me = room.players[pid];
   const pub = (id) => room.players[id].pub;
   const play = room.plays[room.idx];
-  const inPlay = room.phase !== 'lobby';
-  const out = {
+    const out = {
     v: room.v, code: room.code, phase: room.phase, cfg: room.cfg,
     you: me ? me.pub : null, host: room.host === pid,
     idx: room.idx, total: room.plays.length || room.cfg.plays,
     left: room.deadline ? Math.max(0, room.deadline - now) : 0,
     players: room.order.map((id) => {
       const p = room.players[id];
-      return { pub: p.pub, name: p.name, num: p.num, color: p.color, yards: p.yards, pts: p.pts, tds: p.tds, total: p.total, fg: p.fg, host: id === room.host, in: !!room.answers[id] };
+      return { pub: p.pub, name: p.name, num: p.num, color: p.color, score: p.score, deep: p.deep, host: id === room.host, in: !!room.answers[id] };
     }),
     rx: room.rx,
   };
-  if (inPlay && play) out.play = { q: play.q, type: play.type, last: room.idx === room.plays.length - 1 };
+  const last = room.idx === room.plays.length - 1;
+  if (play && play.q && ['answer', 'review', 'result'].includes(room.phase)) out.play = { q: play.q, type: play.type, cat: play.cat, value: play.value, last };
+  if (room.phase === 'pick' && room.pick) out.pick = { pub: pub(room.pick.pid), options: room.pick.options, mine: room.pick.pid === pid, value: play.value, last };
   if (me) { out.hm = me.hm; out.mine = room.answers[pid] || null; }
   if (room.phase === 'review' || room.phase === 'result') {
     out.groups = room.groups.map((g, gi) => ({
@@ -193,6 +211,7 @@ function view(room, pid, now) {
       need: Math.floor((room.order.length - g.pids.length) / 2) + 1,
       flagged: (room.flags[gi] || []).includes(pid),
       mine: g.pids.includes(pid), bad: !!g.bad,
+      pay: pay(play, g.pids.length, g.pids.length === 1 && g.hm.length === 1, play.type === 'deep' && overturned(room, gi), room.order.length)[0],
     }));
   }
   if (room.phase === 'result' && room.results) {
@@ -202,4 +221,4 @@ function view(room, pid, now) {
   return out;
 }
 
-module.exports = { newRoom, addPlayer, cleanName, start, tick, view, fail, groupAnswers };
+module.exports = { newRoom, addPlayer, cleanName, start, tick, choose, view, fail, groupAnswers };

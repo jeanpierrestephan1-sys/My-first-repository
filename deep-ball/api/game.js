@@ -56,7 +56,7 @@ const actions = {
     let room = await store.get(b.code);
     if (!room) throw E.fail('That game has ended. Start a new one.');
     const now = Date.now();
-    const due = ['answer', 'review', 'result'].includes(room.phase) &&
+    const due = ['pick', 'answer', 'review', 'result'].includes(room.phase) &&
       (now >= room.deadline || (room.phase === 'answer' && room.order.every((p) => room.answers[p])));
     if (due) room = await mutate(b.code, (r) => E.tick(r, Date.now(), false));
     return { room };
@@ -66,7 +66,7 @@ const actions = {
     return { room: await mutate(b.code, (r) => {
       if (r.host !== b.pid || r.phase !== 'lobby') return false;
       if ([6, 8, 12].includes(b.plays)) r.cfg.plays = b.plays;
-      if (['family', 'fans'].includes(b.crowd)) r.cfg.crowd = b.crowd;
+      if (['family', 'buffs'].includes(b.crowd)) r.cfg.crowd = b.crowd;
     }) };
   },
 
@@ -88,6 +88,13 @@ const actions = {
       if (hm) p.hm -= 1;
       r.answers[b.pid] = { t, hm };
       E.tick(r, Date.now(), false); // last one in snaps the ball
+    }) };
+  },
+
+  async pick(b) {
+    return { room: await mutate(b.code, (r) => {
+      if (r.phase !== 'pick' || !r.pick || r.pick.pid !== b.pid) return false;
+      return E.choose(r, String(b.cat), Date.now());
     }) };
   },
 
@@ -123,8 +130,8 @@ const actions = {
   async again(b) {
     return { room: await mutate(b.code, (r) => {
       if (r.host !== b.pid || r.phase !== 'final') return false;
-      r.phase = 'lobby'; r.plays = []; r.idx = 0; r.answers = {}; r.groups = []; r.results = null; r.deadline = 0;
-      for (const id of r.order) Object.assign(r.players[id], { yards: 0, pts: 0, tds: 0, total: 0, fg: false });
+      r.phase = 'lobby'; r.plays = []; r.pool = {}; r.pick = null; r.idx = 0; r.answers = {}; r.groups = []; r.results = null; r.deadline = 0;
+      for (const id of r.order) Object.assign(r.players[id], { score: 0, deep: 0 });
     }) };
   },
 };
