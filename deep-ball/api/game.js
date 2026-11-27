@@ -56,7 +56,7 @@ const actions = {
     let room = await store.get(b.code);
     if (!room) throw E.fail('That game has ended. Start a new one.');
     const now = Date.now();
-    const due = ['pick', 'answer', 'review', 'result'].includes(room.phase) &&
+    const due = ['pick', 'wager', 'answer', 'review', 'result'].includes(room.phase) &&
       (now >= room.deadline || (room.phase === 'answer' && room.order.every((p) => room.answers[p])));
     if (due) room = await mutate(b.code, (r) => E.tick(r, Date.now(), false));
     return { room };
@@ -84,7 +84,7 @@ const actions = {
     return { room: await mutate(b.code, (r) => {
       const p = r.players[b.pid];
       if (!p || r.phase !== 'answer' || r.answers[b.pid]) return false;
-      const hm = !!b.hm && p.hm > 0 && r.plays[r.idx].type === 'deep';
+      const hm = !!b.hm && p.hm > 0 && r.plays[r.idx].type === 'deep' && !r.plays[r.idx].final;
       if (hm) p.hm -= 1;
       r.answers[b.pid] = { t, hm };
       E.tick(r, Date.now(), false); // last one in snaps the ball
@@ -98,6 +98,29 @@ const actions = {
     }) };
   },
 
+  async wager(b) {
+    return { room: await mutate(b.code, (r) => {
+      if (r.phase !== 'wager' || !r.order.includes(b.pid) || r.wagers[b.pid]) return false;
+      if (!E.setWager(r, b.pid, Number(b.amt))) return false;
+      E.tick(r, Date.now(), false); // last stake in reveals the question
+    }) };
+  },
+
+  async merge(b) { // host rules two answers are the same
+    return { room: await mutate(b.code, (r) => {
+      if (r.host !== b.pid || r.phase !== 'review') return false;
+      return E.merge(r, Number(b.from), Number(b.into), Date.now());
+    }) };
+  },
+
+  async ready(b) {
+    return { room: await mutate(b.code, (r) => {
+      if (r.phase !== 'review' || !r.order.includes(b.pid) || r.ready.includes(b.pid)) return false;
+      r.ready.push(b.pid);
+      E.tick(r, Date.now(), false); // everyone ready: score it now
+    }) };
+  },
+
   async flag(b) {
     return { room: await mutate(b.code, (r) => {
       const g = r.groups[b.gi];
@@ -106,6 +129,7 @@ const actions = {
       const f = r.flags[b.gi] || (r.flags[b.gi] = []);
       const i = f.indexOf(b.pid);
       if (i >= 0) f.splice(i, 1); else f.push(b.pid);
+      E.nudge(r, Date.now());
     }) };
   },
 
