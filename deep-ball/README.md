@@ -8,6 +8,9 @@ and the answer nobody else gives is worth the most. Two things make it its own g
 - **The game remembers your family.** Every valid answer a family gives is burned in their league and pays half
   from then on. Questions come back as rematches, the easy answers die first, and season standings carry over.
 
+- **Tournament play.** Rounds of three plays. The bottom half is knocked out each round and joins the defense
+  against the survivors. The last two play a championship that ends on a wager. Titles go on the season table.
+
 Also: thirteen categories, values from $200 to $1,000, streak bonuses, flags, Hail Marys, and a wager on the final play.
 
 - `public/index.html` is the whole front end (fonts are bundled in `public/fonts`, SIL Open Font License)
