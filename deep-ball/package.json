@@ -1,0 +1,9 @@
+{
+  "name": "deep-ball",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "Deep Ball: a live family football trivia game where the rare answer goes long.",
+  "scripts": { "dev": "node dev.js" },
+  "engines": { "node": ">=20" }
+}
