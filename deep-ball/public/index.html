@@ -384,7 +384,7 @@ function lobby() {
     <div><i>🙏</i><span><b>One Hail Mary each.</b> Double the value if nobody matches you. Lose the value if anyone does.</span></div>
     <div><i>🏆</i><span><b>Values climb</b> from $200 to $1,000 and the last play is double. Most money wins.</span></div>
   </div>
-  <p style="margin-top:16px"><button class="linkbtn" id="snd">${me.quiet ? 'Turn sound on' : 'Turn sound off'}</button> <button class="linkbtn" id="lv" style="margin-left:14px">Leave game</button></p>
+  <p style="margin-top:16px"><button class="linkbtn" id="snd">${me.quiet ? 'Turn sound on' : 'Turn sound off'}</button> <button class="linkbtn" data-exit="leave" style="margin-left:14px">Leave game</button></p>
   ${dock(S.host ? `<button class="btn" id="go">${S.players.length < 2 ? 'Waiting for players' : 'Kick off'}</button>`
     : `<p style="text-align:center;font-weight:600;margin:0">Waiting for ${esc(host ? host.name : 'the host')} to kick off</p>`)}`;
   document.getElementById('share').onclick = async () => {
@@ -392,7 +392,6 @@ function lobby() {
     try { if (navigator.share) await navigator.share(data); else { await navigator.clipboard.writeText(link); toast('Invite link copied.'); } } catch {}
   };
   document.getElementById('snd').onclick = () => { me.quiet = !me.quiet; store.set(me); if (!me.quiet) whistle(); lobby(); };
-  document.getElementById('lv').onclick = leave;
   app.querySelectorAll('[data-plays]').forEach((b) => b.onclick = () => act('cfg', { plays: +b.dataset.plays }));
   app.querySelectorAll('[data-crowd]').forEach((b) => b.onclick = () => act('cfg', { crowd: b.dataset.crowd }));
   const go = document.getElementById('go');
@@ -406,7 +405,7 @@ function pick() {
     <h2 class="prompt" style="margin-bottom:6px">${head}</h2>
     ${S.pick.options.map((c) => S.pick.mine ? `<button class="btn alt cat" data-cat="${esc(c)}">${esc(c)}</button>` : `<div class="btn cat off">${esc(c)}</div>`).join('')}
     ${S.pick.mine ? '' : '<p class="hint">The trailing player picks. Stay ready.</p>'}
-    <h3 class="sec">The field</h3><div class="mini">${lanes(false)}</div>`;
+    <h3 class="sec">The field</h3><div class="mini">${lanes(false)}</div>${exits()}`;
   app.querySelectorAll('[data-cat]').forEach((b) => b.onclick = () => { buzz(30); act('pick', { cat: b.dataset.cat }, b); });
   if (S.pick.mine) buzz(60);
 }
@@ -433,7 +432,7 @@ function answer(fresh) {
       <h2 class="prompt">${esc(S.play.q)}</h2>
       <p class="hint" style="margin:-8px 0 14px">${hint}</p>
       <div id="box"></div><h3 class="sec">In the huddle</h3><div id="wait"></div>
-      <h3 class="sec">The field</h3><div class="mini">${lanes(false)}</div>`;
+      <h3 class="sec">The field</h3><div class="mini">${lanes(false)}</div>${exits()}`;
     whistle(); buzz(60); window.scrollTo(0, 0);
     app._mine = undefined;
   }
@@ -461,16 +460,16 @@ function review() {
   app.innerHTML = `${bar()}
     <p class="muted" style="margin-bottom:4px">${esc(S.play.q)}</p>
     <h2 class="prompt" style="margin-top:0">${deep ? 'Any flags on the play?' : 'How the huddle voted'}</h2>
-    <div class="stack">${order.map(({ g, gi }) => {
+    <div class="stack">${order.filter(({ g }) => g.pubs.some((id) => byPub[id])).map(({ g, gi }) => {
       const y = g.pay, over = deep && g.flags >= g.need;
       return `<div class="card ans ${g.mine ? 'me' : ''} ${over ? 'bad' : ''}">
         <span class="txt">${esc(g.txt)}</span><span class="yd ${y < 0 ? 'neg' : ''}">${y > 0 ? '+' : ''}${money(y)}</span>
-        <div class="who">${g.pubs.map((id) => `<span>${jersey(byPub[id])}${esc(byPub[id].name)}${g.hm.includes(id) ? ' 🙏' : ''}</span>`).join('')}</div>
+        <div class="who">${g.pubs.filter((id) => byPub[id]).map((id) => `<span>${jersey(byPub[id])}${esc(byPub[id].name)}${g.hm.includes(id) ? ' 🙏' : ''}</span>`).join('')}</div>
         ${over ? '<span class="stamp">Overturned</span>' : ''}
         ${deep && !g.mine ? `<button class="flagbtn" data-gi="${gi}" aria-pressed="${g.flagged}">🚩 ${g.flagged ? 'Flag thrown' : 'Throw a flag'} (${g.flags} of ${g.need})</button>` : ''}
       </div>`;
     }).join('') || '<div class="card">Nobody answered. Delay of game on everyone.</div>'}</div>
-    ${silent.length && S.groups.length ? `<p class="muted" style="margin-top:14px">No answer from ${silent.map((p) => esc(p.name)).join(', ')}.</p>` : ''}
+    ${silent.length && S.groups.length ? `<p class="muted" style="margin-top:14px">No answer from ${silent.map((p) => esc(p.name)).join(', ')}.</p>` : ''}${exits()}
     ${dock(S.host ? `<button class="btn" id="skip">Blow the whistle</button>` : '', true)}`;
   app.querySelectorAll('[data-gi]').forEach((b) => b.onclick = () => { buzz(30); act('flag', { gi: +b.dataset.gi }); });
   hostSkip('review');
@@ -483,7 +482,7 @@ function result() {
   app.innerHTML = `${bar()}
     <div class="big"><div class="n ${mine.gain < 0 ? 'neg' : win ? 'win' : ''}">${mine.gain > 0 ? '+' : ''}${money(mine.gain)}</div>
       <div class="l">${esc(mine.label)}</div></div>
-    ${lanes(true)}
+    ${lanes(true)}${exits()}
     ${dock(S.host ? `<button class="btn" id="skip">${last ? 'See the final score' : 'Next play'}</button>` : '', true)}`;
   window.scrollTo(0, 0);
   setTimeout(() => {
@@ -505,18 +504,29 @@ function final() {
       <div class="w">${esc(tie ? `${w.name} & ${st[1].name}` : w.name)}</div></div>
     <div class="card">${st.map((p, i) => `<div class="rank"><span class="pos">${i + 1}</span>${jersey(p)}
       <span class="nm">${esc(p.name)}<small>${p.deep} deep ball${p.deep === 1 ? '' : 's'}</small></span>
-      <span class="sc">${money(p.score)}</span></div>`).join('')}</div>
+      <span class="sc">${money(p.score)}</span></div>`).join('')}</div>${exits()}
     ${dock(S.host ? `<button class="btn" id="again">Play again</button>` : `<p style="text-align:center;font-weight:600;margin:0">The host can start a rematch</p>`, true)}`;
   window.scrollTo(0, 0);
   if (w.pub === S.you || (tie && st[1].pub === S.you)) setTimeout(() => { fanfare(); confetti(50); }, 400);
   const a = document.getElementById('again'); if (a) a.onclick = () => act('again', {}, a);
 }
 
+// Ways out, on every in-game screen. Two taps so nobody quits by accident.
+function exits() {
+  return `<p style="margin-top:26px"><button class="linkbtn" data-exit="leave">Leave game</button>${S.host && S.phase !== 'lobby' ? ` <button class="linkbtn" data-exit="end" style="margin-left:14px">End game for everyone</button>` : ''}</p>`;
+}
+async function quit() { try { await call('leave'); } catch {} leave(); }
+
 function hostSkip(phase) { const b = document.getElementById('skip'); if (b) b.onclick = () => act('skip', { phase }, b); }
 
 app.addEventListener('click', (e) => {
   const b = e.target.closest('[data-rx]');
   if (b) { buzz(15); act('react', { e: b.dataset.rx }); }
+  const x = e.target.closest('[data-exit]');
+  if (x) {
+    if (!x.dataset.sure) { x.dataset.sure = '1'; x.textContent = x.dataset.exit === 'end' ? 'Tap again to end it for everyone' : 'Tap again to leave'; return; }
+    if (x.dataset.exit === 'end') act('end', {}, x); else quit();
+  }
 });
 
 function render() {

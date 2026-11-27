@@ -45,7 +45,7 @@ const actions = {
     if (!name) throw E.fail('Add your name first.');
     let pid = b.pid;
     const room = await mutate(b.code, (r) => {
-      if (pid && r.players[pid]) { r.players[pid].name = name; return; }
+      if (pid && r.players[pid]) { r.players[pid].name = name; if (!r.order.includes(pid)) r.order.push(pid); return; }
       pid = crypto.randomBytes(12).toString('hex');
       E.addPlayer(r, pid, name);
     });
@@ -130,9 +130,20 @@ const actions = {
   async again(b) {
     return { room: await mutate(b.code, (r) => {
       if (r.host !== b.pid || r.phase !== 'final') return false;
-      r.phase = 'lobby'; r.plays = []; r.pool = {}; r.pick = null; r.idx = 0; r.answers = {}; r.groups = []; r.results = null; r.deadline = 0;
-      for (const id of r.order) Object.assign(r.players[id], { score: 0, deep: 0 });
+      E.toLobby(r);
     }) };
+  },
+
+  async end(b) { // host calls the game off; everyone goes back to the lobby
+    return { room: await mutate(b.code, (r) => {
+      if (r.host !== b.pid || r.phase === 'lobby') return false;
+      E.toLobby(r);
+    }) };
+  },
+
+  async leave(b) {
+    const room = await mutate(b.code, (r) => E.removePlayer(r, b.pid, Date.now()));
+    return { room, left: true };
   },
 };
 
@@ -148,9 +159,10 @@ module.exports = async (req, res) => {
     const fn = Object.prototype.hasOwnProperty.call(actions, b.a) ? actions[b.a] : null;
     if (!fn) return res.status(400).json({ error: 'Unknown action' });
     if (b.a !== 'create' && b.code.length !== 4) throw E.fail('Game codes are four letters.');
-    const { room, pid } = await fn(b);
+    const { room, pid, left } = await fn(b);
+    if (left) return res.status(200).json({ left: true });
     const me = pid || b.pid;
-    if (!room.players[me] && b.a === 'state') return res.status(200).json({ error: 'You are not in this game yet.', gone: true });
+    if (!room.order.includes(me) && b.a === 'state') return res.status(200).json({ error: 'You are not in this game yet.', gone: true });
     res.status(200).json({ pid, state: E.view(room, me, Date.now()) });
   } catch (e) {
     if (e.user) return res.status(200).json({ error: e.message, gone: /ended/.test(e.message) });
