@@ -69,8 +69,7 @@ const actions = {
     let room = await store.get(b.code);
     if (!room) throw E.fail('That game has ended. Start a new one.');
     const now = Date.now();
-    const due = ['pick', 'wager', 'answer', 'review', 'result'].includes(room.phase) &&
-      (now >= room.deadline || (room.phase === 'answer' && room.order.every((p) => room.answers[p])));
+    const due = ['pick', 'wager', 'answer', 'review', 'result', 'cut'].includes(room.phase) && now >= room.deadline;
     if (due) room = await mutate(b.code, (r) => E.tick(r, Date.now(), false));
     return { room };
   },
@@ -80,6 +79,7 @@ const actions = {
       if (r.host !== b.pid || r.phase !== 'lobby') return false;
       if ([6, 8, 12].includes(b.plays)) r.cfg.plays = b.plays;
       if (['family', 'buffs'].includes(b.crowd)) r.cfg.crowd = b.crowd;
+      if (['game', 'tourney'].includes(b.mode)) r.cfg.mode = b.mode;
     }) };
   },
 
@@ -96,17 +96,18 @@ const actions = {
   async answer(b) {
     const tidy = (x) => String(x || '').replace(/\s+/g, ' ').trim().slice(0, 40);
     const t = tidy(b.text);
-    const cov = (Array.isArray(b.cov) ? b.cov : []).map(tidy).filter(Boolean).slice(0, 3);
+    const cov = [...new Set((Array.isArray(b.cov) ? b.cov : []).map(tidy).filter(Boolean))];
     if (!t && !cov.length) throw E.fail('Type an answer first.');
     return { room: await mutate(b.code, (r) => {
       const p = r.players[b.pid];
       if (!p || !r.order.includes(b.pid) || r.phase !== 'answer' || r.answers[b.pid]) return false;
-      if (r.def === b.pid) { // the defender names up to three answers instead of giving one
+      if (E.defenders(r).includes(b.pid)) { // a defender names answers to cover instead of giving one
         if (!cov.length) throw E.fail('Name at least one answer to cover.');
-        r.answers[b.pid] = { t: '', cov };
+        r.answers[b.pid] = { t: '', cov: cov.slice(0, E.slots(r)) };
         E.tick(r, Date.now(), false);
         return;
       }
+      if (!E.active(r).includes(b.pid)) return false; // on the sideline this play
       if (!t) throw E.fail('Type an answer first.');
       const hm = !!b.hm && p.hm > 0 && r.plays[r.idx].type === 'deep' && !r.plays[r.idx].final;
       if (hm) p.hm -= 1;

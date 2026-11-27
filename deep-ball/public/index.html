@@ -280,14 +280,14 @@ const standing = (ps) => ps.slice().sort((a, b) => b.score - a.score || b.deep -
 // Track position: the leader sets the scale, so the field always shows who is chasing whom.
 function scale() {
   let m = 1000;
-  for (const p of S.players) m = Math.max(m, p.score);
+  for (const p of S.players) if (p.alive) m = Math.max(m, p.score);
   if (S.results) for (const r of Object.values(S.results)) m = Math.max(m, r.from, r.to);
   return m;
 }
 const X = (score, m) => 3 + Math.max(0, Math.min(1, score / m)) * 94;
 function lanes(animate) {
   const m = scale();
-  return `<div class="lanes">${standing(S.players).map((p) => {
+  return `<div class="lanes">${standing(S.players.filter((p) => p.alive)).map((p) => {
     const r = animate && S.results ? S.results[p.pub] : null;
     const from = r ? r.from : p.score;
     let gain = '';
@@ -307,7 +307,7 @@ function lanes(animate) {
   }).join('')}</div>`;
 }
 function bar() {
-  return `<div class="bar"><span class="where">Play ${S.idx + 1} of ${S.total}</span><span class="clock" id="clock">0</span></div><div class="tbar"><i id="tb"></i></div>`;
+  return `<div class="bar"><span class="where">${S.tour ? `${esc(S.tour.name)}, play ${S.tour.k} of ${S.tour.of}` : `Play ${S.idx + 1} of ${S.total}`}</span><span class="clock" id="clock">0</span></div><div class="tbar"><i id="tb"></i></div>`;
 }
 function dock(btnHtml, rx) {
   const row = rx ? `<div class="rxrow">${['🏈', '🔥', '😂', '😱', '👏'].map((e) => `<button data-rx="${e}" aria-label="React ${e}">${e}</button>`).join('')}</div>` : '';
@@ -318,7 +318,7 @@ function tickClock() {
   if (!c || !S) return;
   const left = Math.max(0, deadline - Date.now());
   c.textContent = Math.ceil(left / 1000);
-  c.classList.toggle('hot', ['answer', 'pick', 'wager'].includes(S.phase) && left < 8000);
+  c.classList.toggle('hot', ['answer', 'pick', 'wager'].includes(S.phase) && left < 8000 && !(S.play && S.play.role === 'side'));
   if (tb) tb.style.transform = `scaleX(${Math.min(1, left / span)})`;
 }
 setInterval(tickClock, 200);
@@ -379,8 +379,11 @@ function lobby() {
   <h3 class="sec">On the roster (${S.players.length})</h3>
   <div class="roster">${S.players.map((p) => `<span class="chip">${jersey(p)}${esc(p.name)}${p.host ? ' (host)' : ''}</span>`).join('')}</div>
   ${S.host ? `
+  <h3 class="sec">Format</h3>
+  <div class="seg">${[['game', 'Single game'], ['tourney', 'Tournament']].map(([n, l]) => `<button data-mode="${n}" aria-pressed="${(S.cfg.mode || 'game') === n}">${l}</button>`).join('')}</div>
+  ${S.cfg.mode === 'tourney' ? `<p class="muted" style="margin-top:10px">${S.players.length < 3 ? 'A tournament needs three or more players. With fewer, this plays as a single game.' : `Rounds of three plays. After each round the bottom half is knocked out and joins the defense. The last two play for the title.`}</p>` : `
   <h3 class="sec">Game length</h3>
-  <div class="seg">${[[6, 'Quick<br>6 plays'], [8, 'Classic<br>8 plays'], [12, 'Marathon<br>12 plays']].map(([n, l]) => `<button data-plays="${n}" aria-pressed="${S.cfg.plays === n}">${l}</button>`).join('')}</div>
+  <div class="seg">${[[6, 'Quick<br>6 plays'], [8, 'Classic<br>8 plays'], [12, 'Marathon<br>12 plays']].map(([n, l]) => `<button data-plays="${n}" aria-pressed="${S.cfg.plays === n}">${l}</button>`).join('')}</div>`}
   <h3 class="sec">Questions for</h3>
   <div class="seg">${[['family', 'The whole family'], ['buffs', 'Trivia buffs']].map(([n, l]) => `<button data-crowd="${n}" aria-pressed="${S.cfg.crowd === n}">${l}</button>`).join('')}</div>` : ''}
   <h3 class="sec">How it works</h3>
@@ -391,6 +394,7 @@ function lobby() {
     <div><i>🤝</i><span><b>Huddle plays flip it.</b> Now you want to match as many people as you can.</span></div>
     <div><i>🚩</i><span><b>Flag wrong answers.</b> If most of the family agrees, it costs them and pays everyone who flagged it.</span></div>
     <div><i>🙏</i><span><b>One Hail Mary each.</b> Double the value if nobody matches you. Lose the value if anyone does, or if the defense has it covered.</span></div>
+    <div><i>🏟️</i><span><b>Tournament format.</b> Rounds of three plays. The bottom half is knocked out each round and joins the defense against the survivors. The last two play for the title.</span></div>
     <div><i>🏆</i><span><b>The final play is a bet.</b> Trailing player picks each category; everyone stakes their winnings on the last one. Most money wins.</span></div>
   </div>
   ${seasonCard()}
@@ -404,6 +408,7 @@ function lobby() {
   document.getElementById('snd').onclick = () => { me.quiet = !me.quiet; store.set(me); if (!me.quiet) whistle(); lobby(); };
   app.querySelectorAll('[data-plays]').forEach((b) => b.onclick = () => act('cfg', { plays: +b.dataset.plays }));
   app.querySelectorAll('[data-crowd]').forEach((b) => b.onclick = () => act('cfg', { crowd: b.dataset.crowd }));
+  app.querySelectorAll('[data-mode]').forEach((b) => b.onclick = () => act('cfg', { mode: b.dataset.mode }));
   const go = document.getElementById('go');
   if (go) go.onclick = () => { if (S.players.length < 2) return toast('You need at least two players. Tap Invite the family.'); act('start', {}, go); };
 }
@@ -415,7 +420,7 @@ function pick() {
     <h2 class="prompt" style="margin-bottom:6px">${head}</h2>
     ${S.pick.options.map((c, i) => { const rm = S.pick.rematch && S.pick.rematch[i] ? '<span style="float:right;font:600 14px var(--body);line-height:22px">Rematch</span>' : ''; return S.pick.mine ? `<button class="btn alt cat" data-cat="${esc(c)}">${esc(c)}${rm}</button>` : `<div class="btn cat off">${esc(c)}${rm}</div>`; }).join('')}
     ${S.pick.mine ? '' : '<p class="hint">The trailing player picks. Stay ready.</p>'}
-    ${S.pick.def ? `<p class="hint">🛡️ ${S.pick.def.mine ? 'You are' : esc(nameOf(S.pick.def.pub)) + ' is'} on defense this play.</p>` : ''}
+    ${S.pick.defs.pubs.length ? `<p class="hint">🛡️ On defense this play: ${S.pick.role === 'def' && S.pick.defs.pubs.length === 1 ? 'you' : defNames(S.pick.defs)}.</p>` : ''}
     <h3 class="sec">The field</h3><div class="mini">${lanes(false)}</div>${exits()}`;
   app.querySelectorAll('[data-cat]').forEach((b) => b.onclick = () => { buzz(30); act('pick', { cat: b.dataset.cat }, b); });
   if (S.pick.mine) buzz(60);
@@ -426,19 +431,21 @@ function waiting() {
   return `<div class="roster">${S.players.map((p) => `<span class="chip ${p.in ? 'in' : 'wait'}">${jersey(p)}${esc(p.name)}${p.in ? ' ✓' : ''}</span>`).join('')}</div>
     <p class="muted" style="margin-top:10px">${out.length ? `Waiting on ${out.length === 1 ? esc(out[0].name) : out.length + ' players'}.` : 'Everyone is in.'}</p>`;
 }
+const defNames = (d) => d.pubs.map((x) => esc(nameOf(x))).join(', ');
 const nameOf = (pub) => { const p = S.players.find((x) => x.pub === pub); return p ? p.name : 'Someone'; };
 function seasonCard() {
   const z = S.season;
   if (!z || !z.games) return '<p class="muted" style="margin-top:14px">This is your family\'s first game. From here on, the game remembers every answer you give.</p>';
   return `<h3 class="sec">Family season</h3><div class="card">${z.table.map((r, i) => `<div class="rank"><span class="pos">${i + 1}</span>
-      <span class="nm" style="grid-column:2/4">${esc(r.name)}<small>${r.wins} win${r.wins === 1 ? '' : 's'} in ${r.games} game${r.games === 1 ? '' : 's'}${r.picks ? `, ${r.picks} pick${r.picks === 1 ? '' : 's'}` : ''}</small></span>
+      <span class="nm" style="grid-column:2/4">${esc(r.name)}<small>${r.titles ? `${r.titles} title${r.titles === 1 ? '' : 's'}, ` : ''}${r.wins} win${r.wins === 1 ? '' : 's'} in ${r.games} game${r.games === 1 ? '' : 's'}${r.picks ? `, ${r.picks} pick${r.picks === 1 ? '' : 's'}` : ''}</small></span>
       <span class="sc">${money(r.money)}</span></div>`).join('')}</div>
     <p class="muted" style="margin-top:12px">${z.games} game${z.games === 1 ? '' : 's'} played. ${z.burned} answer${z.burned === 1 ? '' : 's'} burned: say one again and it pays half.</p>`;
 }
 function answerBox() {
   if (S.mine && S.mine.cov) return `<div class="card"><p style="font-weight:600;font-size:15px">Your coverage</p><p class="called">${S.mine.cov.map(esc).join('<br>')}</p></div>`;
-  if (S.play.def && S.play.def.mine) return `<form class="stack" id="cf">
-    ${['Their most likely answer', 'Second guess', 'Third guess'].map((ph, i) => `<input class="field" id="c${i}" maxlength="40" autocomplete="off" autocapitalize="words" placeholder="${ph}" aria-label="${ph}">`).join('')}
+  if (S.play.role === 'side') return `<div class="card"><p style="font-weight:600">You are on the sideline for this play. Watch the board and flag anything wrong.</p></div>`;
+  if (S.play.role === 'def') return `<form class="stack" id="cf">
+    ${['Their most likely answer', 'Second guess', 'Third guess'].slice(0, S.play.defs.slots).map((ph, i) => `<input class="field" id="c${i}" maxlength="40" autocomplete="off" autocapitalize="words" placeholder="${ph}" aria-label="${ph}">`).join('')}
     <button class="btn">Set the coverage</button></form>`;
   if (S.mine) return `<div class="card"><p style="font-weight:600;font-size:15px">${S.mine.hm ? 'Your Hail Mary' : 'You called'}</p><p class="called">${esc(S.mine.t)}</p></div>`;
   const hm = S.play.type === 'deep' && !S.play.final && S.hm > 0;
@@ -450,11 +457,12 @@ function answerBox() {
 function answer(fresh) {
   if (fresh) {
     const cls = S.play.type === 'huddle' ? 'huddle' : S.play.final ? 'drill' : '';
-    const d = S.play.def;
+    const d = S.play.defs, n = d.slots, solo = d.pubs.length === 1;
     const hint = S.play.type === 'huddle' ? 'Huddle play. Match as many people as you can.'
+      : S.play.role === 'side' ? 'The finalists are answering.'
       : S.play.final ? `You have ${money(S.play.stake)} riding on this. Be the only one who says it.`
-      : d && d.mine ? '🛡️ You are on defense. Name three answers you think the family will give. Hit one and you take their money.'
-      : d ? `Be the only one who says it, and dodge the three answers ${esc(nameOf(d.pub))} is covering. 🛡️` : 'Be the only one who says it.';
+      : S.play.role === 'def' ? `🛡️ You are on defense${solo ? '' : ' with ' + (d.pubs.length - 1) + ' other' + (d.pubs.length === 2 ? '' : 's')}. Name ${n === 1 ? 'the answer' : n === 2 ? 'two answers' : 'three answers'} you think they will give. Hit one and you take their money.`
+      : d.pubs.length ? `Be the only one who says it, and dodge the defense: ${defNames(d)}. 🛡️` : 'Be the only one who says it.';
     const burn = S.play.burned ? `<p class="hint" style="margin:-6px 0 14px">Rematch question. Your family has burned ${S.play.burned} answer${S.play.burned === 1 ? '' : 's'} here. Repeat one and it pays half.</p>` : '';
     app.innerHTML = `${bar()}<span class="tag ${cls}">${esc(S.play.cat)}${S.play.final ? ', final play' : ' for ' + money(S.play.value)}</span>
       <h2 class="prompt">${esc(S.play.q)}</h2>
@@ -471,7 +479,7 @@ function answer(fresh) {
     const cf = document.getElementById('cf');
     if (cf) cf.onsubmit = (e) => {
       e.preventDefault();
-      const cov = [0, 1, 2].map((i) => document.getElementById('c' + i).value.trim()).filter(Boolean);
+      const cov = [0, 1, 2].map((i) => document.getElementById('c' + i)).filter(Boolean).map((el) => el.value.trim()).filter(Boolean);
       if (!cov.length) return toast('Name at least one answer to cover.');
       act('answer', { cov }, cf.querySelector('button'));
     };
@@ -493,6 +501,7 @@ function wager() {
   app.innerHTML = `${bar()}<span class="tag drill">${esc(w.cat)}, final play</span>
     <h2 class="prompt" style="margin-bottom:8px">${w.mine ? `${money(w.mine)} on the line` : 'Set your stakes'}</h2>
     <p class="hint" style="margin:0 0 6px">You see the question after everyone bets. Be the only one with your answer and you win your stake. Match one person and nothing changes. Match two or more, or get flagged, and you lose it.</p>
+    ${w.role !== 'off' ? '<div class="card"><p style="font-weight:600">The finalists are setting their stakes.</p></div>' : ''}
     ${w.mine ? '' : w.options.map((o, i) => `<button class="btn ${i === w.options.length - 1 ? '' : 'alt'} cat" data-amt="${o}">${money(o)}<span style="float:right;font:600 15px var(--body);line-height:22px">${names[w.options.length === 3 ? i : i ? 2 : 0]}</span></button>`).join('')}
     <h3 class="sec">Bets in</h3>${waiting()}${exits()}`;
   app.querySelectorAll('[data-amt]').forEach((b) => b.onclick = () => { buzz(30); act('wager', { amt: +b.dataset.amt }, b); });
@@ -510,7 +519,7 @@ function review() {
   app.innerHTML = `${bar()}
     <p class="muted" style="margin-bottom:4px">${esc(S.play.q)}</p>
     <h2 class="prompt" style="margin-top:0">${head}</h2>
-    ${S.cov ? `<div class="card cov"><b>🛡️ ${esc(nameOf(S.play.def.pub))} covered</b>${S.cov.map((c) => `<span class="${c.hit ? 'hit' : ''}">${esc(c.t)} ${c.hit ? '✓' : '✗'}</span>`).join('') || '<span>nothing</span>'}</div>` : ''}
+    ${S.cov ? `<div class="card cov"><b>🛡️ ${S.play.defs.pubs.length === 1 ? esc(nameOf(S.play.defs.pubs[0])) : 'The defense'} covered</b>${S.cov.map((c) => `<span class="${c.hit ? 'hit' : ''}">${S.play.defs.pubs.length > 1 ? esc(nameOf(c.by)) + ': ' : ''}${esc(c.t)} ${c.hit ? '✓' : '✗'}</span>`).join('') || '<span>nothing</span>'}</div>` : ''}
     <div class="stack">${order.map(({ g, gi }) => {
       const over = deep && g.bad;
       const worth = g.picked && !g.bad ? 'Picked off' : g.pay === null ? esc(g.call) : (g.pay > 0 ? '+' : '') + money(g.pay);
@@ -538,6 +547,30 @@ function review() {
   r.onclick = () => (S.ready && S.host ? act('skip', { phase: 'review' }, r) : act('ready', {}, r));
 }
 
+// Tournament: what the knocked-out players took on defense this play, and their running bounty.
+function defenseStrip() {
+  const b = S.players.filter((p) => !p.alive);
+  if (!S.tour || !b.length) return '';
+  return `<h3 class="sec">The defense</h3><div class="roster">${b.map((p) => { const r = S.results && S.results[p.pub]; return `<span class="chip ${r && r.gain > 0 ? 'in' : ''}">${jersey(p)}${esc(p.name)} ${r && r.gain > 0 ? '+' + money(r.gain) : ''}<small style="opacity:.75;margin-left:4px">${money(p.bounty)} bounty</small></span>`; }).join('')}</div>`;
+}
+
+function cut() {
+  const c = S.cut, byPub = Object.fromEntries(S.players.map((p) => [p.pub, p]));
+  const row = (x, i, cls) => byPub[x.pub] ? `<div class="rank"><span class="pos">${i}</span>${jersey(byPub[x.pub])}<span class="nm">${esc(byPub[x.pub].name)}</span><span class="sc" ${cls}>${money(x.score)}</span></div>` : '';
+  const meOut = c.out.some((x) => x.pub === S.you), meIn = c.through.some((x) => x.pub === S.you);
+  app.innerHTML = `<div class="bar"><span class="where">${esc(c.name)} is over</span><span class="clock" id="clock">0</span></div><div class="tbar"><i id="tb"></i></div>
+    <h2 class="prompt">${meIn ? `You are through to the ${esc(c.next)}` : meOut ? 'Knocked out. Now you play defense.' : `On to the ${esc(c.next)}`}</h2>
+    <h3 class="sec" style="margin-top:0">Moving on</h3>
+    <div class="card">${c.through.map((x, i) => row(x, i + 1, '')).join('')}</div>
+    <h3 class="sec">Joining the defense</h3>
+    <div class="card" style="background:#e9e3d6">${c.out.map((x, i) => row(x, c.through.length + i + 1, 'style="opacity:.6"')).join('')}</div>
+    <p class="muted" style="margin-top:14px">Scores reset for the ${esc(c.next)}. The defense names answers each play and takes the money of anyone they catch.</p>${exits()}
+    ${dock(S.host ? `<button class="btn" id="skip">Start the ${esc(c.next)}</button>` : '', true)}`;
+  window.scrollTo(0, 0);
+  if (meIn) { fanfare(); confetti(14); } else if (meOut) buzz(200);
+  hostSkip('cut');
+}
+
 function result() {
   const mine = S.results[S.you] || { gain: 0, label: '' };
   const last = S.idx === S.total - 1;
@@ -545,8 +578,8 @@ function result() {
   app.innerHTML = `${bar()}
     <div class="big"><div class="n ${mine.gain < 0 ? 'neg' : win ? 'win' : ''}">${mine.gain > 0 ? '+' : ''}${money(mine.gain)}</div>
       <div class="l">${esc(mine.label)}${mine.extra ? ', ' + esc(mine.extra) : ''}</div></div>
-    ${lanes(true)}${exits()}
-    ${dock(S.host ? `<button class="btn" id="skip">${last ? 'See the final score' : 'Next play'}</button>` : '', true)}`;
+    ${lanes(true)}${defenseStrip()}${exits()}
+    ${dock(S.host ? `<button class="btn" id="skip">${last ? 'See the final score' : S.tour && S.tour.k === S.tour.of ? 'See who moves on' : 'Next play'}</button>` : '', true)}`;
   window.scrollTo(0, 0);
   setTimeout(() => {
     app.querySelectorAll('.lane').forEach((el) => {
@@ -561,14 +594,19 @@ function result() {
 
 function final(fresh) {
   seasonSeen = S.season ? S.season.games : -1;
-  const st = standing(S.players);
-  const w = st[0], tie = st[1] && st[1].score === w.score;
+  const alive = S.players.filter((p) => p.alive), benchP = S.players.filter((p) => !p.alive).sort((a, b) => b.bounty - a.bounty);
+  const st = standing(alive);
+  const champ = S.tour && S.champ ? S.players.find((p) => p.pub === S.champ) : null;
+  const w = champ || st[0], tie = !champ && st[1] && st[1].score === w.score;
+  const mvp = S.mvp ? S.players.find((p) => p.pub === S.mvp) : null;
   app.innerHTML = `
-    <div class="champ"><div class="t">🏆</div><p class="lab" style="text-align:center;margin:6px 0">${tie ? 'It ends in a tie' : 'Your champion'}</p>
+    <div class="champ"><div class="t">🏆</div><p class="lab" style="text-align:center;margin:6px 0">${tie ? 'It ends in a tie' : S.tour ? 'Tournament champion' : 'Your champion'}</p>
       <div class="w">${esc(tie ? `${w.name} & ${st[1].name}` : w.name)}</div></div>
     <div class="card">${st.map((p, i) => `<div class="rank"><span class="pos">${i + 1}</span>${jersey(p)}
       <span class="nm">${esc(p.name)}<small>${p.deep} deep ball${p.deep === 1 ? '' : 's'}${p.picks ? `, ${p.picks} pick${p.picks === 1 ? '' : 's'}` : ''}</small></span>
-      <span class="sc">${money(p.score)}</span></div>`).join('')}</div>${seasonCard()}${exits()}
+      <span class="sc">${money(p.score)}</span></div>`).join('')}</div>
+    ${benchP.length ? `<h3 class="sec">The defense${mvp ? `, MVP ${esc(mvp.name)}` : ''}</h3><div class="card">${benchP.map((p) => `<div class="rank"><span class="pos">🛡️</span>${jersey(p)}
+      <span class="nm">${esc(p.name)}<small>${p.picks} pick${p.picks === 1 ? '' : 's'}</small></span><span class="sc">${money(p.bounty)}</span></div>`).join('')}</div>` : ''}${seasonCard()}${exits()}
     ${dock(S.host ? `<button class="btn" id="again">Play again</button>` : `<p style="text-align:center;font-weight:600;margin:0">The host can start a rematch</p>`, true)}`;
   if (fresh) window.scrollTo(0, 0);
   if (fresh && (w.pub === S.you || (tie && st[1].pub === S.you))) setTimeout(() => { fanfare(); confetti(50); }, 400);
@@ -602,6 +640,7 @@ function render() {
   if (S.phase === 'lobby') lobby();
   else if (S.phase === 'pick') pick();
   else if (S.phase === 'wager') wager();
+  else if (S.phase === 'cut') { if (fresh) cut(); }
   else if (S.phase === 'answer') answer(fresh);
   else if (S.phase === 'review') review();
   else if (S.phase === 'result') { if (fresh) result(); }

@@ -22,9 +22,9 @@ async function apply(id, fx) {
       const top = Math.max(...fx.final.map((p) => p.score));
       for (const p of fx.final) {
         const key = p.name.toLowerCase();
-        const s = lg.standings[key] || (lg.standings[key] = { name: p.name, games: 0, wins: 0, money: 0, deep: 0, picks: 0 });
+        const s = lg.standings[key] || (lg.standings[key] = { name: p.name, games: 0, wins: 0, titles: 0, money: 0, deep: 0, picks: 0 });
         s.name = p.name; s.games += 1; s.money += p.score; s.deep += p.deep; s.picks += p.picks;
-        if (p.score === top) s.wins += 1;
+        if (p.win === undefined ? p.score === top : p.win) { s.wins += 1; if (fx.tourney) s.titles = (s.titles || 0) + 1; }
       }
     }
     lg.v = v + 1;
@@ -37,7 +37,7 @@ async function apply(id, fx) {
 function summary(lg) {
   if (!lg) return null;
   const table = Object.values(lg.standings).sort((a, b) => b.wins - a.wins || b.money - a.money).slice(0, 8)
-    .map((s) => ({ name: s.name, games: s.games, wins: s.wins, money: s.money, picks: s.picks }));
+    .map((s) => ({ name: s.name, games: s.games, wins: s.wins, titles: s.titles || 0, money: s.money, picks: s.picks }));
   return { games: lg.games, burned: Object.values(lg.burned).reduce((n, l) => n + l.length, 0), table };
 }
 
