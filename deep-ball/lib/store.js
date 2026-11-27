@@ -1,8 +1,18 @@
 // Room storage. Production: Upstash Redis over REST (no dependencies).
 // Local play-testing: an in-memory map when DEEPBALL_DEV=1.
 
-const URL_ = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-const TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+// Vercel's Upstash integration names these KV_REST_API_URL / KV_REST_API_TOKEN, optionally with a
+// custom prefix; Upstash's own name is UPSTASH_REDIS_REST_URL / _TOKEN. Accept any of them.
+function pick(suffixes) {
+  for (const suf of suffixes) {
+    if (process.env[suf]) return process.env[suf];
+    const k = Object.keys(process.env).find((n) => n.endsWith('_' + suf) && process.env[n]);
+    if (k) return process.env[k];
+  }
+  return '';
+}
+const URL_ = pick(['KV_REST_API_URL', 'UPSTASH_REDIS_REST_URL', 'REDIS_REST_URL']);
+const TOKEN = pick(['KV_REST_API_TOKEN', 'UPSTASH_REDIS_REST_TOKEN', 'REDIS_REST_TOKEN']);
 const DEV = !URL_ && process.env.DEEPBALL_DEV === '1';
 const TTL = 60 * 60 * 6; // rooms disappear six hours after the last action
 const mem = new Map();
@@ -31,6 +41,8 @@ const key = (code) => `deepball:room:${code}`;
 
 module.exports = {
   configured: () => DEV || !!(URL_ && TOKEN),
+  // Names only (never values) of storage-looking settings, to make a wrong setup easy to spot.
+  seen: () => Object.keys(process.env).filter((n) => /KV|REDIS|UPSTASH/i.test(n)).sort(),
   async get(code) {
     if (DEV) { const s = mem.get(code); return s ? JSON.parse(s) : null; }
     const s = await cmd(['GET', key(code)]);
