@@ -114,7 +114,8 @@ h3.sec{font:400 20px/1 var(--display);margin:26px 0 10px}
 .ans .who .jersey{width:24px;height:24px;font-size:12px;border-color:var(--ink)}
 .yd{font:700 26px/1 var(--num);white-space:nowrap}
 .yd.neg{color:var(--red)}
-.flagbtn{grid-column:1/-1;justify-self:start;border:3px solid var(--ink);background:#fff;border-radius:10px;padding:8px 12px;font:600 15px var(--body);cursor:pointer;color:var(--ink)}
+.tools{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px}
+.flagbtn{border:3px solid var(--ink);background:#fff;border-radius:10px;padding:8px 12px;font:600 15px var(--body);cursor:pointer;color:var(--ink)}
 .flagbtn[aria-pressed=true]{background:var(--flag)}
 .ans.bad .txt{text-decoration:line-through;text-decoration-thickness:3px}
 .stamp{position:absolute;right:10px;top:8px;transform:rotate(7deg);border:3px solid var(--red);color:var(--red);border-radius:8px;padding:3px 8px;font:400 15px var(--display);background:var(--chalk)}
@@ -187,7 +188,7 @@ const store = {
   set(o) { try { localStorage.setItem('deepball', JSON.stringify(o)); } catch {} },
 };
 let me = store.get();               // { name, code, pid, quiet }
-let S = null, key = '', deadline = 0, span = 1, lastRx = -1, timer = null;
+let S = null, key = '', deadline = 0, span = 1, lastRx = -1, timer = null, mergeFrom = null;
 const urlCode = (new URLSearchParams(location.search).get('g') || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
 if (urlCode && urlCode !== me.code) { me.code = ''; me.pid = ''; }
 
@@ -293,7 +294,7 @@ function lanes(animate) {
       arc = `<svg viewBox="0 0 100 34" preserveAspectRatio="none" aria-hidden="true"><path class="${r.gain < 0 ? 'neg' : ''}" d="M${a} 26 Q${(a + b) / 2} ${26 - h * 2} ${b} 26"/></svg>`;
     }
     return `<div class="lane ${p.pub === S.you ? 'you' : ''}" data-pub="${p.pub}" data-to="${X(p.score, m)}">
-      <div class="info">${jersey(p)}<span class="nm">${esc(p.name)}</span>${gain}<span class="pts ${p.score < 0 ? 'neg' : ''}">${money(p.score)}</span></div>
+      <div class="info">${jersey(p)}<span class="nm">${esc(p.name)}${p.streak >= 2 ? ' 🔥' : ''}</span>${gain}<span class="pts ${p.score < 0 ? 'neg' : ''}">${money(p.score)}</span></div>
       <div class="track">${arc}<div class="dot" style="--c:${p.color};left:${X(from, m)}%">${p.num}</div></div>
     </div>`;
   }).join('')}</div>`;
@@ -310,7 +311,7 @@ function tickClock() {
   if (!c || !S) return;
   const left = Math.max(0, deadline - Date.now());
   c.textContent = Math.ceil(left / 1000);
-  c.classList.toggle('hot', (S.phase === 'answer' || S.phase === 'pick') && left < 8000);
+  c.classList.toggle('hot', ['answer', 'pick', 'wager'].includes(S.phase) && left < 8000);
   if (tb) tb.style.transform = `scaleX(${Math.min(1, left / span)})`;
 }
 setInterval(tickClock, 200);
@@ -378,11 +379,12 @@ function lobby() {
   <h3 class="sec">How it works</h3>
   <div class="card rules">
     <div><i>🏈</i><span><b>Go deep.</b> Every question has lots of right answers and a dollar value. Be the only one with your answer and you bank all of it. Share it with one person and you get half. Say what everyone says and you get a tenth.</span></div>
-    <div><i>📋</i><span><b>Trailing player calls the play.</b> Whoever is behind picks the next category, from history to music to food.</span></div>
+    <div><i>🔥</i><span><b>Stay hot.</b> Back-to-back answers nobody matched earn a streak bonus, up to $300.</span></div>
+    <div><i>📋</i><span><b>Trailing player calls the play.</b> Whoever is behind picks the next category.</span></div>
     <div><i>🤝</i><span><b>Huddle plays flip it.</b> Now you want to match as many people as you can.</span></div>
-    <div><i>🚩</i><span><b>Throw a flag</b> on any answer that is wrong. If most of the family agrees, it costs half the value.</span></div>
+    <div><i>🚩</i><span><b>Flag wrong answers.</b> If most of the family agrees, it costs them half the value and pays everyone who flagged it.</span></div>
     <div><i>🙏</i><span><b>One Hail Mary each.</b> Double the value if nobody matches you. Lose the value if anyone does.</span></div>
-    <div><i>🏆</i><span><b>Values climb</b> from $200 to $1,000 and the last play is double. Most money wins.</span></div>
+    <div><i>🏆</i><span><b>The final play is a bet.</b> Everyone stakes part of their winnings before seeing the question. Most money wins.</span></div>
   </div>
   <p style="margin-top:16px"><button class="linkbtn" id="snd">${me.quiet ? 'Turn sound on' : 'Turn sound off'}</button> <button class="linkbtn" data-exit="leave" style="margin-left:14px">Leave game</button></p>
   ${dock(S.host ? `<button class="btn" id="go">${S.players.length < 2 ? 'Waiting for players' : 'Kick off'}</button>`
@@ -401,7 +403,7 @@ function lobby() {
 function pick() {
   const who = S.players.find((p) => p.pub === S.pick.pub);
   const head = S.pick.mine ? 'Your call. Pick a category.' : `${esc(who ? who.name : 'Someone')} is calling the play`;
-  app.innerHTML = `${bar()}<span class="tag ${S.pick.last ? 'drill' : ''}">${S.pick.last ? 'Last play, double money: ' : 'Next play is worth '}${money(S.pick.value)}</span>
+  app.innerHTML = `${bar()}<span class="tag ${S.pick.final ? 'drill' : ''}">${S.pick.final ? 'Final play. Everyone sets their own stakes.' : 'Next play is worth ' + money(S.pick.value)}</span>
     <h2 class="prompt" style="margin-bottom:6px">${head}</h2>
     ${S.pick.options.map((c) => S.pick.mine ? `<button class="btn alt cat" data-cat="${esc(c)}">${esc(c)}</button>` : `<div class="btn cat off">${esc(c)}</div>`).join('')}
     ${S.pick.mine ? '' : '<p class="hint">The trailing player picks. Stay ready.</p>'}
@@ -417,7 +419,7 @@ function waiting() {
 }
 function answerBox() {
   if (S.mine) return `<div class="card"><p style="font-weight:600;font-size:15px">${S.mine.hm ? 'Your Hail Mary' : 'You called'}</p><p class="called">${esc(S.mine.t)}</p></div>`;
-  const hm = S.play.type === 'deep' && S.hm > 0;
+  const hm = S.play.type === 'deep' && !S.play.final && S.hm > 0;
   return `<form class="stack" id="af">
     <input class="field" id="ai" maxlength="40" autocomplete="off" autocapitalize="words" enterkeyhint="send" placeholder="${S.play.type === 'huddle' ? 'What will everyone say?' : 'Think past the obvious'}" aria-label="Your answer">
     ${hm ? `<label class="hm"><input type="checkbox" id="hm"><span><b>Call a Hail Mary</b>${money(S.play.value * 2)} if nobody matches you. Lose ${money(S.play.value)} if anyone does.</span></label>` : ''}
@@ -425,10 +427,10 @@ function answerBox() {
 }
 function answer(fresh) {
   if (fresh) {
-    const cls = S.play.type === 'huddle' ? 'huddle' : S.play.last ? 'drill' : '';
+    const cls = S.play.type === 'huddle' ? 'huddle' : S.play.final ? 'drill' : '';
     const hint = S.play.type === 'huddle' ? 'Huddle play. Match as many people as you can.'
-      : S.play.last ? 'Last play, double money. Be the only one who says it.' : 'Be the only one who says it.';
-    app.innerHTML = `${bar()}<span class="tag ${cls}">${esc(S.play.cat)} for ${money(S.play.value)}</span>
+      : S.play.final ? `You have ${money(S.play.stake)} riding on this. Be the only one who says it.` : 'Be the only one who says it.';
+    app.innerHTML = `${bar()}<span class="tag ${cls}">${esc(S.play.cat)}${S.play.final ? ', final play' : ' for ' + money(S.play.value)}</span>
       <h2 class="prompt">${esc(S.play.q)}</h2>
       <p class="hint" style="margin:-8px 0 14px">${hint}</p>
       <div id="box"></div><h3 class="sec">In the huddle</h3><div id="wait"></div>
@@ -452,27 +454,54 @@ function answer(fresh) {
   document.getElementById('wait').innerHTML = waiting();
 }
 
+function wager() {
+  const w = S.wager;
+  const names = ['Play it safe', 'Half the pot', 'All in'];
+  app.innerHTML = `${bar()}<span class="tag drill">${esc(w.cat)}, final play</span>
+    <h2 class="prompt" style="margin-bottom:8px">${w.mine ? `${money(w.mine)} on the line` : 'Set your stakes'}</h2>
+    <p class="hint" style="margin:0 0 6px">You see the question after everyone bets. Be the only one with your answer and you win your stake. Match one person and nothing changes. Match two or more, or get flagged, and you lose it.</p>
+    ${w.mine ? '' : w.options.map((o, i) => `<button class="btn ${i === w.options.length - 1 ? '' : 'alt'} cat" data-amt="${o}">${money(o)}<span style="float:right;font:600 15px var(--body);line-height:22px">${names[w.options.length === 3 ? i : i ? 2 : 0]}</span></button>`).join('')}
+    <h3 class="sec">Bets in</h3>${waiting()}${exits()}`;
+  app.querySelectorAll('[data-amt]').forEach((b) => b.onclick = () => { buzz(30); act('wager', { amt: +b.dataset.amt }, b); });
+}
+
 function review() {
   const deep = S.play.type === 'deep';
   const byPub = Object.fromEntries(S.players.map((p) => [p.pub, p]));
-  const order = S.groups.map((g, gi) => ({ g, gi })).sort((a, b) => deep ? a.g.pubs.length - b.g.pubs.length : b.g.pubs.length - a.g.pubs.length);
+  const order = S.groups.map((g, gi) => ({ g, gi })).filter(({ g }) => g.pubs.some((id) => byPub[id]))
+    .sort((a, b) => deep ? a.g.pubs.length - b.g.pubs.length : b.g.pubs.length - a.g.pubs.length);
   const silent = S.players.filter((p) => !S.groups.some((g) => g.pubs.includes(p.pub)));
+  const canMerge = S.host && order.length > 1;
+  const nReady = S.players.filter((p) => p.in).length;
+  const head = mergeFrom !== null ? 'Which answer is it the same as?' : deep ? 'Any flags on the play?' : 'How the huddle voted';
   app.innerHTML = `${bar()}
     <p class="muted" style="margin-bottom:4px">${esc(S.play.q)}</p>
-    <h2 class="prompt" style="margin-top:0">${deep ? 'Any flags on the play?' : 'How the huddle voted'}</h2>
-    <div class="stack">${order.filter(({ g }) => g.pubs.some((id) => byPub[id])).map(({ g, gi }) => {
-      const y = g.pay, over = deep && g.flags >= g.need;
+    <h2 class="prompt" style="margin-top:0">${head}</h2>
+    <div class="stack">${order.map(({ g, gi }) => {
+      const over = deep && g.bad;
+      const worth = g.pay === null ? esc(g.call) : (g.pay > 0 ? '+' : '') + money(g.pay);
+      let tools = '';
+      if (mergeFrom === gi) tools = `<button class="flagbtn" data-m="x" aria-pressed="true">Cancel</button>`;
+      else if (mergeFrom !== null) tools = `<button class="flagbtn" data-into="${gi}">Same as this one</button>`;
+      else {
+        if (deep && !g.mine) tools += `<button class="flagbtn" data-gi="${gi}" aria-pressed="${g.flagged}">🚩 ${g.flagged ? 'Flag thrown' : 'Wrong answer'} (${g.flags} of ${g.need})</button>`;
+        if (canMerge) tools += `<button class="flagbtn" data-m="${gi}">Same as another</button>`;
+      }
       return `<div class="card ans ${g.mine ? 'me' : ''} ${over ? 'bad' : ''}">
-        <span class="txt">${esc(g.txt)}</span><span class="yd ${y < 0 ? 'neg' : ''}">${y > 0 ? '+' : ''}${money(y)}</span>
+        <span class="txt">${esc(g.txt)}</span><span class="yd ${g.pay < 0 || /Loses/.test(g.call) ? 'neg' : ''}" ${g.pay === null ? 'style="font-size:17px"' : ''}>${worth}</span>
         <div class="who">${g.pubs.filter((id) => byPub[id]).map((id) => `<span>${jersey(byPub[id])}${esc(byPub[id].name)}${g.hm.includes(id) ? ' 🙏' : ''}</span>`).join('')}</div>
         ${over ? '<span class="stamp">Overturned</span>' : ''}
-        ${deep && !g.mine ? `<button class="flagbtn" data-gi="${gi}" aria-pressed="${g.flagged}">🚩 ${g.flagged ? 'Flag thrown' : 'Throw a flag'} (${g.flags} of ${g.need})</button>` : ''}
+        ${tools ? `<div class="tools">${tools}</div>` : ''}
       </div>`;
     }).join('') || '<div class="card">Nobody answered. Delay of game on everyone.</div>'}</div>
-    ${silent.length && S.groups.length ? `<p class="muted" style="margin-top:14px">No answer from ${silent.map((p) => esc(p.name)).join(', ')}.</p>` : ''}${exits()}
-    ${dock(S.host ? `<button class="btn" id="skip">Blow the whistle</button>` : '', true)}`;
+    ${silent.length && S.groups.length ? `<p class="muted" style="margin-top:14px">No answer from ${silent.map((p) => esc(p.name)).join(', ')}.</p>` : ''}
+    ${deep ? '<p class="muted" style="margin-top:14px">A flag that sticks costs them and pays you.</p>' : ''}${exits()}
+    ${dock(`<button class="btn" id="rdy" ${S.ready && !S.host ? 'disabled' : ''}>${!S.ready ? 'Looks good' : S.host ? `Blow the whistle (${nReady} of ${S.players.length} ready)` : `Ready, ${nReady} of ${S.players.length}`}</button>`, true)}`;
   app.querySelectorAll('[data-gi]').forEach((b) => b.onclick = () => { buzz(30); act('flag', { gi: +b.dataset.gi }); });
-  hostSkip('review');
+  app.querySelectorAll('[data-m]').forEach((b) => b.onclick = () => { mergeFrom = b.dataset.m === 'x' ? null : +b.dataset.m; review(); });
+  app.querySelectorAll('[data-into]').forEach((b) => b.onclick = () => { const from = mergeFrom; mergeFrom = null; act('merge', { from, into: +b.dataset.into }, b); });
+  const r = document.getElementById('rdy');
+  r.onclick = () => (S.ready && S.host ? act('skip', { phase: 'review' }, r) : act('ready', {}, r));
 }
 
 function result() {
@@ -481,7 +510,7 @@ function result() {
   const win = mine.label === 'Deep ball' || mine.label === 'Hail Mary';
   app.innerHTML = `${bar()}
     <div class="big"><div class="n ${mine.gain < 0 ? 'neg' : win ? 'win' : ''}">${mine.gain > 0 ? '+' : ''}${money(mine.gain)}</div>
-      <div class="l">${esc(mine.label)}</div></div>
+      <div class="l">${esc(mine.label)}${mine.extra ? ', ' + esc(mine.extra) : ''}</div></div>
     ${lanes(true)}${exits()}
     ${dock(S.host ? `<button class="btn" id="skip">${last ? 'See the final score' : 'Next play'}</button>` : '', true)}`;
   window.scrollTo(0, 0);
@@ -533,9 +562,11 @@ function render() {
   if (!S) return home();
   const k = `${S.code}:${S.phase}:${S.idx}`;
   const fresh = k !== key; key = k;
-  if (fresh) span = Math.max(1, S.left);
+  if (fresh) { span = Math.max(1, S.left); mergeFrom = null; }
+  span = Math.max(span, S.left);
   if (S.phase === 'lobby') lobby();
   else if (S.phase === 'pick') pick();
+  else if (S.phase === 'wager') wager();
   else if (S.phase === 'answer') answer(fresh);
   else if (S.phase === 'review') review();
   else if (S.phase === 'result') { if (fresh) result(); }
