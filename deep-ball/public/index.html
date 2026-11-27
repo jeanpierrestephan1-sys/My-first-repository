@@ -106,6 +106,12 @@ h3.sec{font:400 20px/1 var(--display);margin:26px 0 10px}
 .cat.off{background:rgba(8,58,36,.75);color:var(--chalk);border-color:rgba(251,248,240,.4);box-shadow:none;font-size:19px;padding:14px 16px}
 .hint{font-weight:600;margin:12px 0 0}
 
+.cov{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.cov b{flex-basis:100%;font-size:15px}
+.cov span{border:2px solid var(--ink);border-radius:8px;padding:4px 9px;font-weight:600;font-size:15px;opacity:.6}
+.cov span.hit{opacity:1;background:var(--red);color:#fff;border-color:var(--red)}
+.burn{background:var(--ink);color:var(--chalk);border-radius:6px;padding:2px 7px;font-size:12.5px}
+
 /* review */
 .ans{position:relative;display:grid;grid-template-columns:1fr auto;gap:8px 12px;align-items:center}
 .ans .txt{font:400 23px/1.1 var(--display);overflow-wrap:anywhere}
@@ -188,7 +194,7 @@ const store = {
   set(o) { try { localStorage.setItem('deepball', JSON.stringify(o)); } catch {} },
 };
 let me = store.get();               // { name, code, pid, quiet }
-let S = null, key = '', deadline = 0, span = 1, lastRx = -1, timer = null, mergeFrom = null;
+let S = null, key = '', deadline = 0, span = 1, lastRx = -1, timer = null, mergeFrom = null, seasonSeen = -1;
 const urlCode = (new URLSearchParams(location.search).get('g') || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
 if (urlCode && urlCode !== me.code) { me.code = ''; me.pid = ''; }
 
@@ -212,6 +218,7 @@ function apply(st) {
   if (S && st.code === S.code && st.v < S.v) return;
   const changed = !S || st.v !== S.v || st.code !== S.code;
   S = st; deadline = Date.now() + st.left;
+  if (st.league && st.league !== me.league) { me.league = st.league; store.set(me); }
   if (lastRx < 0) lastRx = st.rx.reduce((m, r) => Math.max(m, r.id), 0);
   for (const r of st.rx) if (r.id > lastRx) { lastRx = r.id; floater(r); }
   if (changed) render();
@@ -333,7 +340,7 @@ function home() {
     </svg>
     <h1 class="logo"><span>Deep</span><span>Ball</span></h1>
   </div>
-  <p class="pitch">Everyone answers the same question on their own phone. History, movies, food, sports and more. Say what the whole family says and you get stuffed. Say what nobody else thought of and you go long.</p>
+  <p class="pitch">Everyone answers the same question on their own phone. History, movies, food, sports and more. Say what the whole family says and you get stuffed. Say what nobody else thought of and you go long. One of you plays defense, and the game remembers every answer your family has ever given.</p>
   <form class="stack" id="f">
     <div><label class="lab" for="nm">Your name</label>
       <input class="field" id="nm" maxlength="14" autocomplete="given-name" placeholder="Coach Dad" value="${esc(me.name || '')}"></div>
@@ -349,7 +356,7 @@ function home() {
     e.preventDefault(); const n = name(); if (!n) return;
     const b = e.target.querySelector('button');
     if (joining) { me.code = urlCode; act('join', { name: n }, b).then((j) => { if (!j) me.code = ''; }); }
-    else { me.code = ''; act('create', { name: n }, b); }
+    else { me.code = ''; act('create', { name: n, league: me.league || '' }, b); }
   };
   const j = document.getElementById('j');
   if (j) j.onsubmit = (e) => {
@@ -378,14 +385,15 @@ function lobby() {
   <div class="seg">${[['family', 'The whole family'], ['buffs', 'Trivia buffs']].map(([n, l]) => `<button data-crowd="${n}" aria-pressed="${S.cfg.crowd === n}">${l}</button>`).join('')}</div>` : ''}
   <h3 class="sec">How it works</h3>
   <div class="card rules">
-    <div><i>🏈</i><span><b>Go deep.</b> Every question has lots of right answers and a dollar value. Be the only one with your answer and you bank all of it. Share it with one person and you get half. Say what everyone says and you get a tenth.</span></div>
-    <div><i>🔥</i><span><b>Stay hot.</b> Back-to-back answers nobody matched earn a streak bonus, up to $300.</span></div>
-    <div><i>📋</i><span><b>Trailing player calls the play.</b> Whoever is behind picks the next category.</span></div>
+    <div><i>🏈</i><span><b>Go deep.</b> Every question has lots of right answers and a dollar value. Be the only one with your answer and you bank all of it. Share it and you split less. Back-to-back solo answers earn a streak bonus.</span></div>
+    <div><i>🛡️</i><span><b>Beat the defense.</b> Each play one of you is the defender, who secretly names three answers. Give one of them and you are picked off: the defender takes your money.</span></div>
+    <div><i>🧠</i><span><b>The game remembers.</b> Every answer your family has ever given is burned and pays half from then on. The easy answers die first.</span></div>
     <div><i>🤝</i><span><b>Huddle plays flip it.</b> Now you want to match as many people as you can.</span></div>
-    <div><i>🚩</i><span><b>Flag wrong answers.</b> If most of the family agrees, it costs them half the value and pays everyone who flagged it.</span></div>
-    <div><i>🙏</i><span><b>One Hail Mary each.</b> Double the value if nobody matches you. Lose the value if anyone does.</span></div>
-    <div><i>🏆</i><span><b>The final play is a bet.</b> Everyone stakes part of their winnings before seeing the question. Most money wins.</span></div>
+    <div><i>🚩</i><span><b>Flag wrong answers.</b> If most of the family agrees, it costs them and pays everyone who flagged it.</span></div>
+    <div><i>🙏</i><span><b>One Hail Mary each.</b> Double the value if nobody matches you. Lose the value if anyone does, or if the defense has it covered.</span></div>
+    <div><i>🏆</i><span><b>The final play is a bet.</b> Trailing player picks each category; everyone stakes their winnings on the last one. Most money wins.</span></div>
   </div>
+  ${seasonCard()}
   <p style="margin-top:16px"><button class="linkbtn" id="snd">${me.quiet ? 'Turn sound on' : 'Turn sound off'}</button> <button class="linkbtn" data-exit="leave" style="margin-left:14px">Leave game</button></p>
   ${dock(S.host ? `<button class="btn" id="go">${S.players.length < 2 ? 'Waiting for players' : 'Kick off'}</button>`
     : `<p style="text-align:center;font-weight:600;margin:0">Waiting for ${esc(host ? host.name : 'the host')} to kick off</p>`)}`;
@@ -405,8 +413,9 @@ function pick() {
   const head = S.pick.mine ? 'Your call. Pick a category.' : `${esc(who ? who.name : 'Someone')} is calling the play`;
   app.innerHTML = `${bar()}<span class="tag ${S.pick.final ? 'drill' : ''}">${S.pick.final ? 'Final play. Everyone sets their own stakes.' : 'Next play is worth ' + money(S.pick.value)}</span>
     <h2 class="prompt" style="margin-bottom:6px">${head}</h2>
-    ${S.pick.options.map((c) => S.pick.mine ? `<button class="btn alt cat" data-cat="${esc(c)}">${esc(c)}</button>` : `<div class="btn cat off">${esc(c)}</div>`).join('')}
+    ${S.pick.options.map((c, i) => { const rm = S.pick.rematch && S.pick.rematch[i] ? '<span style="float:right;font:600 14px var(--body);line-height:22px">Rematch</span>' : ''; return S.pick.mine ? `<button class="btn alt cat" data-cat="${esc(c)}">${esc(c)}${rm}</button>` : `<div class="btn cat off">${esc(c)}${rm}</div>`; }).join('')}
     ${S.pick.mine ? '' : '<p class="hint">The trailing player picks. Stay ready.</p>'}
+    ${S.pick.def ? `<p class="hint">🛡️ ${S.pick.def.mine ? 'You are' : esc(nameOf(S.pick.def.pub)) + ' is'} on defense this play.</p>` : ''}
     <h3 class="sec">The field</h3><div class="mini">${lanes(false)}</div>${exits()}`;
   app.querySelectorAll('[data-cat]').forEach((b) => b.onclick = () => { buzz(30); act('pick', { cat: b.dataset.cat }, b); });
   if (S.pick.mine) buzz(60);
@@ -417,7 +426,20 @@ function waiting() {
   return `<div class="roster">${S.players.map((p) => `<span class="chip ${p.in ? 'in' : 'wait'}">${jersey(p)}${esc(p.name)}${p.in ? ' ✓' : ''}</span>`).join('')}</div>
     <p class="muted" style="margin-top:10px">${out.length ? `Waiting on ${out.length === 1 ? esc(out[0].name) : out.length + ' players'}.` : 'Everyone is in.'}</p>`;
 }
+const nameOf = (pub) => { const p = S.players.find((x) => x.pub === pub); return p ? p.name : 'Someone'; };
+function seasonCard() {
+  const z = S.season;
+  if (!z || !z.games) return '<p class="muted" style="margin-top:14px">This is your family\'s first game. From here on, the game remembers every answer you give.</p>';
+  return `<h3 class="sec">Family season</h3><div class="card">${z.table.map((r, i) => `<div class="rank"><span class="pos">${i + 1}</span>
+      <span class="nm" style="grid-column:2/4">${esc(r.name)}<small>${r.wins} win${r.wins === 1 ? '' : 's'} in ${r.games} game${r.games === 1 ? '' : 's'}${r.picks ? `, ${r.picks} pick${r.picks === 1 ? '' : 's'}` : ''}</small></span>
+      <span class="sc">${money(r.money)}</span></div>`).join('')}</div>
+    <p class="muted" style="margin-top:12px">${z.games} game${z.games === 1 ? '' : 's'} played. ${z.burned} answer${z.burned === 1 ? '' : 's'} burned: say one again and it pays half.</p>`;
+}
 function answerBox() {
+  if (S.mine && S.mine.cov) return `<div class="card"><p style="font-weight:600;font-size:15px">Your coverage</p><p class="called">${S.mine.cov.map(esc).join('<br>')}</p></div>`;
+  if (S.play.def && S.play.def.mine) return `<form class="stack" id="cf">
+    ${['Their most likely answer', 'Second guess', 'Third guess'].map((ph, i) => `<input class="field" id="c${i}" maxlength="40" autocomplete="off" autocapitalize="words" placeholder="${ph}" aria-label="${ph}">`).join('')}
+    <button class="btn">Set the coverage</button></form>`;
   if (S.mine) return `<div class="card"><p style="font-weight:600;font-size:15px">${S.mine.hm ? 'Your Hail Mary' : 'You called'}</p><p class="called">${esc(S.mine.t)}</p></div>`;
   const hm = S.play.type === 'deep' && !S.play.final && S.hm > 0;
   return `<form class="stack" id="af">
@@ -428,11 +450,15 @@ function answerBox() {
 function answer(fresh) {
   if (fresh) {
     const cls = S.play.type === 'huddle' ? 'huddle' : S.play.final ? 'drill' : '';
+    const d = S.play.def;
     const hint = S.play.type === 'huddle' ? 'Huddle play. Match as many people as you can.'
-      : S.play.final ? `You have ${money(S.play.stake)} riding on this. Be the only one who says it.` : 'Be the only one who says it.';
+      : S.play.final ? `You have ${money(S.play.stake)} riding on this. Be the only one who says it.`
+      : d && d.mine ? '🛡️ You are on defense. Name three answers you think the family will give. Hit one and you take their money.'
+      : d ? `Be the only one who says it, and dodge the three answers ${esc(nameOf(d.pub))} is covering. 🛡️` : 'Be the only one who says it.';
+    const burn = S.play.burned ? `<p class="hint" style="margin:-6px 0 14px">Rematch question. Your family has burned ${S.play.burned} answer${S.play.burned === 1 ? '' : 's'} here. Repeat one and it pays half.</p>` : '';
     app.innerHTML = `${bar()}<span class="tag ${cls}">${esc(S.play.cat)}${S.play.final ? ', final play' : ' for ' + money(S.play.value)}</span>
       <h2 class="prompt">${esc(S.play.q)}</h2>
-      <p class="hint" style="margin:-8px 0 14px">${hint}</p>
+      <p class="hint" style="margin:-8px 0 14px">${hint}</p>${burn}
       <div id="box"></div><h3 class="sec">In the huddle</h3><div id="wait"></div>
       <h3 class="sec">The field</h3><div class="mini">${lanes(false)}</div>${exits()}`;
     whistle(); buzz(60); window.scrollTo(0, 0);
@@ -442,6 +468,13 @@ function answer(fresh) {
   if (app._mine !== has) {
     app._mine = has;
     document.getElementById('box').innerHTML = answerBox();
+    const cf = document.getElementById('cf');
+    if (cf) cf.onsubmit = (e) => {
+      e.preventDefault();
+      const cov = [0, 1, 2].map((i) => document.getElementById('c' + i).value.trim()).filter(Boolean);
+      if (!cov.length) return toast('Name at least one answer to cover.');
+      act('answer', { cov }, cf.querySelector('button'));
+    };
     const f = document.getElementById('af');
     if (f) f.onsubmit = (e) => {
       e.preventDefault();
@@ -477,9 +510,10 @@ function review() {
   app.innerHTML = `${bar()}
     <p class="muted" style="margin-bottom:4px">${esc(S.play.q)}</p>
     <h2 class="prompt" style="margin-top:0">${head}</h2>
+    ${S.cov ? `<div class="card cov"><b>🛡️ ${esc(nameOf(S.play.def.pub))} covered</b>${S.cov.map((c) => `<span class="${c.hit ? 'hit' : ''}">${esc(c.t)} ${c.hit ? '✓' : '✗'}</span>`).join('') || '<span>nothing</span>'}</div>` : ''}
     <div class="stack">${order.map(({ g, gi }) => {
       const over = deep && g.bad;
-      const worth = g.pay === null ? esc(g.call) : (g.pay > 0 ? '+' : '') + money(g.pay);
+      const worth = g.picked && !g.bad ? 'Picked off' : g.pay === null ? esc(g.call) : (g.pay > 0 ? '+' : '') + money(g.pay);
       let tools = '';
       if (mergeFrom === gi) tools = `<button class="flagbtn" data-m="x" aria-pressed="true">Cancel</button>`;
       else if (mergeFrom !== null) tools = `<button class="flagbtn" data-into="${gi}">Same as this one</button>`;
@@ -488,8 +522,8 @@ function review() {
         if (canMerge) tools += `<button class="flagbtn" data-m="${gi}">Same as another</button>`;
       }
       return `<div class="card ans ${g.mine ? 'me' : ''} ${over ? 'bad' : ''}">
-        <span class="txt">${esc(g.txt)}</span><span class="yd ${g.pay < 0 || /Loses/.test(g.call) ? 'neg' : ''}" ${g.pay === null ? 'style="font-size:17px"' : ''}>${worth}</span>
-        <div class="who">${g.pubs.filter((id) => byPub[id]).map((id) => `<span>${jersey(byPub[id])}${esc(byPub[id].name)}${g.hm.includes(id) ? ' 🙏' : ''}</span>`).join('')}</div>
+        <span class="txt">${esc(g.txt)}</span><span class="yd ${g.pay < 0 || /Loses/.test(g.call) || (g.picked && !g.bad) ? 'neg' : ''}" ${g.pay === null || (g.picked && !g.bad) ? 'style="font-size:17px"' : ''}>${worth}</span>
+        <div class="who">${g.pubs.filter((id) => byPub[id]).map((id) => `<span>${jersey(byPub[id])}${esc(byPub[id].name)}${g.hm.includes(id) ? ' 🙏' : ''}</span>`).join('')}${g.burned ? '<span class="burn">Burned before, pays half</span>' : ''}</div>
         ${over ? '<span class="stamp">Overturned</span>' : ''}
         ${tools ? `<div class="tools">${tools}</div>` : ''}
       </div>`;
@@ -525,18 +559,19 @@ function result() {
   hostSkip('result');
 }
 
-function final() {
+function final(fresh) {
+  seasonSeen = S.season ? S.season.games : -1;
   const st = standing(S.players);
   const w = st[0], tie = st[1] && st[1].score === w.score;
   app.innerHTML = `
     <div class="champ"><div class="t">🏆</div><p class="lab" style="text-align:center;margin:6px 0">${tie ? 'It ends in a tie' : 'Your champion'}</p>
       <div class="w">${esc(tie ? `${w.name} & ${st[1].name}` : w.name)}</div></div>
     <div class="card">${st.map((p, i) => `<div class="rank"><span class="pos">${i + 1}</span>${jersey(p)}
-      <span class="nm">${esc(p.name)}<small>${p.deep} deep ball${p.deep === 1 ? '' : 's'}</small></span>
-      <span class="sc">${money(p.score)}</span></div>`).join('')}</div>${exits()}
+      <span class="nm">${esc(p.name)}<small>${p.deep} deep ball${p.deep === 1 ? '' : 's'}${p.picks ? `, ${p.picks} pick${p.picks === 1 ? '' : 's'}` : ''}</small></span>
+      <span class="sc">${money(p.score)}</span></div>`).join('')}</div>${seasonCard()}${exits()}
     ${dock(S.host ? `<button class="btn" id="again">Play again</button>` : `<p style="text-align:center;font-weight:600;margin:0">The host can start a rematch</p>`, true)}`;
-  window.scrollTo(0, 0);
-  if (w.pub === S.you || (tie && st[1].pub === S.you)) setTimeout(() => { fanfare(); confetti(50); }, 400);
+  if (fresh) window.scrollTo(0, 0);
+  if (fresh && (w.pub === S.you || (tie && st[1].pub === S.you))) setTimeout(() => { fanfare(); confetti(50); }, 400);
   const a = document.getElementById('again'); if (a) a.onclick = () => act('again', {}, a);
 }
 
@@ -570,7 +605,7 @@ function render() {
   else if (S.phase === 'answer') answer(fresh);
   else if (S.phase === 'review') review();
   else if (S.phase === 'result') { if (fresh) result(); }
-  else if (S.phase === 'final') { if (fresh) final(); }
+  else if (S.phase === 'final') { if (fresh || (S.season ? S.season.games : -1) !== seasonSeen) final(fresh); }
   tickClock();
 }
 

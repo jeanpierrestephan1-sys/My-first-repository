@@ -148,10 +148,22 @@ function valueAt(i, count) {
 
 // A game script: slots for category picks, a few huddle plays in the middle, a wager on the final play,
 // plus the unused question pool.
-function buildGame(count, crowd) {
+// seen = questions this family has answered before. Each category brings one of them back as a rematch,
+// so burned answers come back into play.
+const PER_CATEGORY = 4;
+function buildGame(count, crowd, seen) {
   const pool = {};
   for (const [cat, qs] of Object.entries(BANK)) {
-    pool[cat] = shuffle(qs.filter(([, t]) => crowd === 'buffs' || t === 'e').map(([q]) => q));
+    const all = shuffle(qs.filter(([, t]) => crowd === 'buffs' || t === 'e').map(([q]) => q));
+    const old = all.filter((q) => seen && seen.has(q)), fresh = all.filter((q) => !(seen && seen.has(q)));
+    const picks = [];
+    const rematch = old.pop();
+    while (picks.length < PER_CATEGORY - 1 && fresh.length) picks.push(fresh.pop());
+    while (picks.length < PER_CATEGORY - 1 && old.length) picks.push(old.pop());
+    // Questions are taken from the end: more often than not, a category with history leads with its rematch.
+    if (rematch) { if (Math.random() < 0.6) picks.push(rematch); else picks.unshift(rematch); }
+    else if (fresh.length) picks.push(fresh.pop());
+    pool[cat] = picks;
   }
   const huddle = shuffle(HUDDLE.slice());
   const nHuddle = Math.max(1, Math.round(count / 4));

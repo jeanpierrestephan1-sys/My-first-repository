@@ -1,14 +1,18 @@
 # Deep Ball
 
-A live family quiz game with a football heart. Everyone answers the same question on their own phone.
-Thirteen categories, from history to music to food. Each play has a dollar value that climbs from $200 to $1,000.
-The answer nobody else gives banks the full value; the obvious one gets stuffed. Streaks pay a bonus,
-flags that stick pay the people who threw them, the trailing player picks the next category,
-and the final play is a wager. Most money wins.
+A live family quiz game with a football heart. Everyone answers the same question on their own phone,
+and the answer nobody else gives is worth the most. Two things make it its own game:
+
+- **Offense versus defense.** On each play one player is the defender. They secretly name three answers they
+  expect the family to give. Anyone who gave one is picked off, and the defender takes their money.
+- **The game remembers your family.** Every valid answer a family gives is burned in their league and pays half
+  from then on. Questions come back as rematches, the easy answers die first, and season standings carry over.
+
+Also: thirteen categories, values from $200 to $1,000, streak bonuses, flags, Hail Marys, and a wager on the final play.
 
 - `public/index.html` is the whole front end (fonts are bundled in `public/fonts`, SIL Open Font License)
 - `api/game.js` is the one serverless endpoint
-- `lib/` holds the rules, the question bank and the room storage
+- `lib/` holds the rules, the question bank, the family league and the storage layer
 
 ## Put it on Vercel
 
@@ -18,7 +22,7 @@ and the final play is a wager. Most money wins.
 4. Redeploy once so the new environment variables are picked up.
 
 The game reads `KV_REST_API_URL` / `KV_REST_API_TOKEN` or `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`.
-Rooms delete themselves six hours after the last action.
+Rooms delete themselves six hours after the last action. A family's league (burned answers and standings) is kept for about 400 days after its last game. A phone remembers its family's league, so any family member can start the next game.
 
 ## Try it on your own machine
 

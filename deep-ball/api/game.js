@@ -2,6 +2,7 @@
 const crypto = require('crypto');
 const store = require('../lib/store');
 const E = require('../lib/engine');
+const League = require('../lib/league');
 
 const LETTERS = 'BCDFGHJKLMNPQRSTVWXZ'; // no vowels, so codes never spell anything
 const REACTIONS = ['🏈', '🔥', '😂', '😱', '👏', '🚩'];
@@ -19,8 +20,16 @@ async function mutate(code, fn) {
     if (!room) throw E.fail('That game has ended. Start a new one.');
     const v = room.v;
     if (fn(room) === false) return room;
+    const fx = room._fx; delete room._fx; // side effects for the family's league, never stored in the room
     room.v = v + 1;
-    if (await store.cas(code, v, room)) return room;
+    if (await store.cas(code, v, room)) {
+      if (!fx || !room.league) return room;
+      try {
+        const lg = await League.apply(room.league, fx);
+        if (lg && fx.final) return await mutate(code, (r) => { r.season = League.summary(lg); });
+      } catch (e) { console.error('league', e); }
+      return room;
+    }
   }
   throw E.fail('Busy field. Try that again.');
 }
@@ -30,9 +39,13 @@ const actions = {
     const name = E.cleanName(b.name);
     if (!name) throw E.fail('Add your name first.');
     const pid = crypto.randomBytes(12).toString('hex');
+    // A returning family keeps its league (its burned answers and standings); a new one gets a fresh league.
+    const league = /^[A-Z]{8}$/.test(String(b.league || '')) ? b.league : Array.from({ length: 8 }, () => LETTERS[crypto.randomInt(LETTERS.length)]).join('');
+    const season = League.summary(await League.load(league));
     for (let i = 0; i < 20; i++) {
       const code = newCode();
-      const room = E.newRoom(code, pid);
+      const room = E.newRoom(code, pid, league);
+      room.season = season;
       E.addPlayer(room, pid, name);
       room.v = 1;
       if (await store.cas(code, 0, room)) return { room, pid };
@@ -71,19 +84,30 @@ const actions = {
   },
 
   async start(b) {
+    const cur = await store.get(b.code);
+    const lg = cur && cur.league ? await League.load(cur.league) : null;
     return { room: await mutate(b.code, (r) => {
       if (r.host !== b.pid || r.phase !== 'lobby') return false;
       if (r.order.length < 2) throw E.fail('You need at least two players. Share the code.');
-      E.start(r);
+      E.start(r, lg);
     }) };
   },
 
   async answer(b) {
-    const t = String(b.text || '').replace(/\s+/g, ' ').trim().slice(0, 40);
-    if (!t) throw E.fail('Type an answer first.');
+    const tidy = (x) => String(x || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+    const t = tidy(b.text);
+    const cov = (Array.isArray(b.cov) ? b.cov : []).map(tidy).filter(Boolean).slice(0, 3);
+    if (!t && !cov.length) throw E.fail('Type an answer first.');
     return { room: await mutate(b.code, (r) => {
       const p = r.players[b.pid];
-      if (!p || r.phase !== 'answer' || r.answers[b.pid]) return false;
+      if (!p || !r.order.includes(b.pid) || r.phase !== 'answer' || r.answers[b.pid]) return false;
+      if (r.def === b.pid) { // the defender names up to three answers instead of giving one
+        if (!cov.length) throw E.fail('Name at least one answer to cover.');
+        r.answers[b.pid] = { t: '', cov };
+        E.tick(r, Date.now(), false);
+        return;
+      }
+      if (!t) throw E.fail('Type an answer first.');
       const hm = !!b.hm && p.hm > 0 && r.plays[r.idx].type === 'deep' && !r.plays[r.idx].final;
       if (hm) p.hm -= 1;
       r.answers[b.pid] = { t, hm };

@@ -14,7 +14,7 @@ function pick(suffixes) {
 const URL_ = pick(['KV_REST_API_URL', 'UPSTASH_REDIS_REST_URL', 'REDIS_REST_URL']);
 const TOKEN = pick(['KV_REST_API_TOKEN', 'UPSTASH_REDIS_REST_TOKEN', 'REDIS_REST_TOKEN']);
 const DEV = !URL_ && process.env.DEEPBALL_DEV === '1';
-const TTL = 60 * 60 * 6; // rooms disappear six hours after the last action
+const TTL = { room: 60 * 60 * 6, league: 60 * 60 * 24 * 400 }; // rooms last six hours; a family's league lasts over a year
 const mem = new Map();
 
 // Write only if the stored version still matches what the caller read.
@@ -37,27 +37,27 @@ async function cmd(args) {
   return j.result;
 }
 
-const key = (code) => `deepball:room:${code}`;
+const key = (id, kind) => `deepball:${kind || 'room'}:${id}`;
 
 module.exports = {
   configured: () => DEV || !!(URL_ && TOKEN),
   // Names only (never values) of storage-looking settings, to make a wrong setup easy to spot.
   seen: () => Object.keys(process.env).filter((n) => /KV|REDIS|UPSTASH/i.test(n)).sort(),
-  async get(code) {
-    if (DEV) { const s = mem.get(code); return s ? JSON.parse(s) : null; }
-    const s = await cmd(['GET', key(code)]);
+  async get(code, kind) {
+    if (DEV) { const s = mem.get(key(code, kind)); return s ? JSON.parse(s) : null; }
+    const s = await cmd(['GET', key(code, kind)]);
     return s ? (typeof s === 'string' ? JSON.parse(s) : s) : null;
   },
   // expect = version previously read (0 for a brand-new room). Returns true when written.
-  async cas(code, expect, room) {
+  async cas(code, expect, room, kind) {
     const body = JSON.stringify(room);
     if (DEV) {
-      const cur = mem.get(code);
+      const cur = mem.get(key(code, kind));
       const v = cur ? JSON.parse(cur).v : 0;
       if (v !== expect) return false;
-      mem.set(code, body);
+      mem.set(key(code, kind), body);
       return true;
     }
-    return (await cmd(['EVAL', CAS, '1', key(code), String(expect), body, String(TTL)])) === 1;
+    return (await cmd(['EVAL', CAS, '1', key(code, kind), String(expect), body, String(TTL[kind || 'room'])])) === 1;
   },
 };
