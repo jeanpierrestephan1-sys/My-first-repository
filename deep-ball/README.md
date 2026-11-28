@@ -11,7 +11,7 @@ and the answer nobody else gives is worth the most. Two things make it its own g
 - **Tournament play.** Rounds of three plays. The bottom half is knocked out each round and joins the defense
   against the survivors. The last two play a championship that ends on a wager. Titles go on the season table.
 
-Also: thirteen categories, values from $200 to $1,000, streak bonuses, flags, Hail Marys, and a wager on the final play.
+Also: 500 questions in seventeen categories, values from $200 to $1,000, streak bonuses, flags, Hail Marys, and a wager on the final play.
 
 - `public/index.html` is the whole front end (fonts are bundled in `public/fonts`, SIL Open Font License)
 - `api/game.js` is the one serverless endpoint
